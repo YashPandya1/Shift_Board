@@ -1,0 +1,36 @@
+{
+  "name": "shiftboard-backend",
+  "version": "1.0.0",
+  "description": "ShiftBoard - Employee Scheduling API",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "seed": "node src/scripts/seed.js",
+    "db:clear": "node src/scripts/clear-database.js",
+    "db:cleanup": "node src/scripts/cleanup-employees.js",
+    "user:list": "node src/scripts/delete-user.js",
+    "user:delete": "node src/scripts/delete-user.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.5.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "express-validator": "^7.2.1",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^8.9.3",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^6.9.16",
+    "pdfkit": "^0.15.2",
+    "socket.io": "^4.8.1",
+    "twilio": "^5.4.0"
+  }
+}

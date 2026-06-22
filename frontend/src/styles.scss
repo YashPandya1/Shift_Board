@@ -1,0 +1,125 @@
+@use '@angular/material' as mat;
+
+html {
+  @include mat.theme((
+    color: (
+      theme-type: light,
+      primary: mat.$azure-palette,
+      tertiary: mat.$blue-palette,
+    ),
+    typography: Inter,
+    density: 0,
+  ));
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: 'Inter', 'Helvetica Neue', sans-serif;
+}
+
+body.dark-theme {
+  @include mat.theme((
+    color: (
+      theme-type: dark,
+      primary: mat.$azure-palette,
+      tertiary: mat.$blue-palette,
+    ),
+    typography: Inter,
+    density: 0,
+  ));
+  background: #121212;
+  color: #e0e0e0;
+}
+
+:root {
+  --sb-primary: #1976d2;
+  --sb-accent: #ff4081;
+  --sb-surface: #ffffff;
+  --sb-background: #f5f7fa;
+  --sb-text: #1a1a2e;
+  --sb-text-secondary: #6b7280;
+  --sb-border: #e5e7eb;
+  --sb-success: #10b981;
+  --sb-warning: #f59e0b;
+  --sb-danger: #ef4444;
+  --sb-radius: 12px;
+  --sb-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 12px rgba(0,0,0,0.04);
+}
+
+body.dark-theme {
+  --sb-surface: #1e1e2e;
+  --sb-background: #121218;
+  --sb-text: #e5e7eb;
+  --sb-text-secondary: #9ca3af;
+  --sb-border: #374151;
+}
+
+.sb-page {
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+.sb-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+
+  h1 {
+    margin: 0;
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: var(--sb-text);
+  }
+}
+
+.sb-card {
+  background: var(--sb-surface);
+  border-radius: var(--sb-radius);
+  box-shadow: var(--sb-shadow);
+  border: 1px solid var(--sb-border);
+  padding: 20px;
+}
+
+.sb-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.sb-stat-card {
+  @extend .sb-card;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+
+  .stat-label {
+    font-size: 0.875rem;
+    color: var(--sb-text-secondary);
+    font-weight: 500;
+  }
+
+  .stat-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--sb-text);
+  }
+
+  .stat-icon {
+    font-size: 2rem;
+    opacity: 0.15;
+    position: absolute;
+    right: 16px;
+    top: 16px;
+  }
+}
+
+@media (max-width: 768px) {
+  .sb-page { padding: 16px; }
+  .sb-page-header h1 { font-size: 1.35rem; }
+}
