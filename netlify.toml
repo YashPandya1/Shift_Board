@@ -1,11 +1,12 @@
 # Netlify — https://docs.netlify.com/configure-builds/file-based-configuration/
 [build]
   base = "frontend"
-  command = "npm install --legacy-peer-deps && npm run build"
+  command = "npm run build"
   publish = "dist/shiftboard/browser"
 
 [build.environment]
   NODE_VERSION = "20"
+  NPM_FLAGS = "--legacy-peer-deps"
   # Set your Render API URL (no trailing slash on host)
   # API_URL = "https://shiftboard-api.onrender.com/api"
   # WS_URL = "https://shiftboard-api.onrender.com"
