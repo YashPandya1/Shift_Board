@@ -1,4 +1,5 @@
 # ShiftBoard
+Checkout the live app: https://shiftboardv3.netlify.app/auth/login
 
 **Employee Scheduling & Workforce Management Platform**
 
