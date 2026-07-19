@@ -1,4 +1,4 @@
-import { Component, inject, computed, ChangeDetectionStrategy } from '@angular/core';
+import { Component, inject, computed, signal, ChangeDetectionStrategy } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { MatSidenav, MatSidenavModule } from '@angular/material/sidenav';
@@ -30,7 +30,7 @@ interface NavItem {
   template: `
     <mat-sidenav-container class="layout-container">
       <mat-sidenav #sidenav [mode]="isHandset() ? 'over' : 'side'"
-                   [opened]="!isHandset()" class="sidenav">
+                   [opened]="isHandset() ? false : desktopNavOpen()" class="sidenav">
         <div class="sidenav-header">
           <mat-icon class="logo-icon">calendar_month</mat-icon>
           <span class="logo-text">ShiftBoard</span>
@@ -48,11 +48,10 @@ interface NavItem {
 
       <mat-sidenav-content>
         <mat-toolbar class="toolbar">
-          @if (isHandset()) {
-            <button mat-icon-button (click)="sidenav.toggle()">
-              <mat-icon>menu</mat-icon>
-            </button>
-          }
+          <button mat-icon-button (click)="toggleNavigation(sidenav)"
+                  [attr.aria-label]="desktopNavOpen() ? 'Hide navigation menu' : 'Show navigation menu'">
+            <mat-icon>{{ !isHandset() && desktopNavOpen() ? 'menu_open' : 'menu' }}</mat-icon>
+          </button>
           <span class="toolbar-spacer"></span>
           <button mat-icon-button (click)="theme.toggle()">
             <mat-icon>{{ theme.isDark() ? 'light_mode' : 'dark_mode' }}</mat-icon>
@@ -99,6 +98,7 @@ export class MainLayoutComponent {
   auth = inject(AuthService);
   theme = inject(ThemeService);
   private breakpoint = inject(BreakpointObserver);
+  desktopNavOpen = signal(true);
 
   isHandset = toSignal(
     this.breakpoint.observe(Breakpoints.Handset).pipe(map((r) => r.matches)),
@@ -122,5 +122,10 @@ export class MainLayoutComponent {
 
   closeSidenavOnMobile(sidenav: MatSidenav): void {
     if (this.isHandset()) sidenav.close();
+  }
+
+  toggleNavigation(sidenav: MatSidenav): void {
+    if (this.isHandset()) sidenav.toggle();
+    else this.desktopNavOpen.update((open) => !open);
   }
 }

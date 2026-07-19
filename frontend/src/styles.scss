@@ -85,6 +85,23 @@ body.dark-theme {
   padding: 20px;
 }
 
+.schedule-location-panel.mat-mdc-select-panel {
+  min-width: min(420px, calc(100vw - 32px));
+  max-width: min(520px, calc(100vw - 32px));
+
+  .mat-mdc-option {
+    min-height: 48px;
+    height: auto;
+
+    .mdc-list-item__primary-text {
+      overflow: visible;
+      white-space: normal;
+      text-overflow: clip;
+      line-height: 1.35;
+    }
+  }
+}
+
 .sb-stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -142,6 +159,7 @@ body.dark-theme {
   .header-actions,
   .hours-hint,
   .view-toggle,
+  .copy-actions,
   .fc-header-toolbar .fc-button-group {
     display: none !important;
   }

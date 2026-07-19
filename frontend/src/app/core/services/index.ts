@@ -88,6 +88,22 @@ export class ScheduleService {
     return this.api.post('/schedules/copy-week', { locationId, targetWeekStart, overwrite });
   }
 
+  copyDay(
+    locationId: string,
+    sourceDate: string,
+    targetDates: string[],
+    overwrite = false
+  ): Observable<{ data: {
+    schedule: Schedule;
+    shifts: Shift[];
+    targetDates: string[];
+    shiftsCopied: number;
+  } }> {
+    return this.api.post('/schedules/copy-day', {
+      locationId, sourceDate, targetDates, overwrite,
+    });
+  }
+
   publish(scheduleId: string): Observable<{ data: Schedule }> {
     return this.api.post<Schedule>(`/schedules/${scheduleId}/publish`, {});
   }

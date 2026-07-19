@@ -385,6 +385,128 @@ export const copyPreviousWeek = async (req, res, next) => {
   }
 };
 
+export const copyScheduleDay = async (req, res, next) => {
+  try {
+    const {
+      locationId,
+      sourceDate,
+      targetDates = [],
+      overwrite = false,
+    } = req.body;
+    if (!locationId || !sourceDate || !Array.isArray(targetDates) || !targetDates.length) {
+      throw new AppError('locationId, sourceDate, and targetDates are required', 400);
+    }
+
+    const location = await Location.exists({
+      _id: locationId,
+      organizationId: req.user.organizationId,
+    });
+    if (!location) throw new AppError('Location not found', 404);
+
+    const org = await Organization.findById(req.user.organizationId);
+    const source = parseScheduleDate(sourceDate);
+    const { weekStart, weekEnd } = getWeekBounds(source, org.scheduleStartDay);
+    const targets = [...new Set(targetDates)]
+      .map((date) => parseScheduleDate(date))
+      .filter((date) => date >= weekStart && date <= weekEnd && date.toDateString() !== source.toDateString());
+    if (!targets.length) {
+      throw new AppError('Select at least one other day in the same week', 400);
+    }
+
+    const sourceStart = new Date(source);
+    sourceStart.setHours(0, 0, 0, 0);
+    const sourceEnd = new Date(source);
+    sourceEnd.setHours(23, 59, 59, 999);
+    const sourceShifts = await Shift.find({
+      organizationId: req.user.organizationId,
+      locationId,
+      date: { $gte: sourceStart, $lte: sourceEnd },
+      status: { $ne: 'cancelled' },
+    });
+    if (!sourceShifts.length) throw new AppError('The source day has no shifts to copy', 400);
+
+    const existingTargetShifts = await Shift.countDocuments({
+      organizationId: req.user.organizationId,
+      locationId,
+      date: { $in: targets },
+    });
+    if (existingTargetShifts && !overwrite) {
+      throw new AppError('One or more target days already have shifts. Confirm replacement to continue.', 409);
+    }
+
+    let schedule = await Schedule.findOne({
+      organizationId: req.user.organizationId,
+      locationId,
+      weekStartDate: { $gte: weekStart, $lte: weekEnd },
+    });
+    if (!schedule) {
+      schedule = await Schedule.create({
+        organizationId: req.user.organizationId,
+        locationId,
+        weekStartDate: weekStart,
+        weekEndDate: weekEnd,
+        createdBy: req.user._id,
+      });
+    }
+
+    const newShiftData = targets.flatMap((targetDate) =>
+      sourceShifts.map((shift) => ({
+        scheduleId: schedule._id,
+        organizationId: shift.organizationId,
+        locationId: shift.locationId,
+        employeeId: shift.isOpenShift ? undefined : shift.employeeId,
+        userId: shift.isOpenShift ? undefined : shift.userId,
+        date: targetDate,
+        startTime: shift.startTime,
+        endTime: shift.endTime,
+        breakLength: shift.breakLength,
+        notes: shift.notes,
+        hourlyWage: shift.hourlyWage,
+        totalHours: shift.totalHours,
+        laborCost: shift.laborCost,
+        isOpenShift: shift.isOpenShift,
+        status: shift.isOpenShift ? 'open' : 'scheduled',
+        createdBy: req.user._id,
+      }))
+    );
+
+    const insertedShifts = await Shift.insertMany(newShiftData);
+    if (existingTargetShifts) {
+      await Shift.deleteMany({
+        organizationId: req.user.organizationId,
+        locationId,
+        date: { $in: targets },
+        _id: { $nin: insertedShifts.map((shift) => shift._id) },
+      });
+    }
+
+    schedule.isPublished = false;
+    schedule.publishedAt = null;
+    schedule.publishedBy = null;
+    await schedule.save();
+
+    const copiedShifts = await Shift.find({
+      _id: { $in: insertedShifts.map((shift) => shift._id) },
+    })
+      .populate('userId', 'firstName lastName')
+      .populate('employeeId', 'firstName lastName position hourlyWage phone')
+      .populate('locationId', 'name operatingHours')
+      .sort({ date: 1, startTime: 1 });
+
+    res.status(201).json({
+      success: true,
+      data: {
+        schedule,
+        shifts: copiedShifts,
+        targetDates: targets.map((date) => date.toISOString()),
+        shiftsCopied: copiedShifts.length,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 export const publishSchedule = async (req, res, next) => {
   try {
     const schedule = await Schedule.findOne({
@@ -465,7 +587,17 @@ export const exportSchedulePDF = async (req, res, next) => {
     });
 
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=schedule-${schedule._id}.pdf`);
+    const safeLocation = (schedule.locationId?.name || 'Location')
+      .trim()
+      .replace(/[^a-z0-9]+/gi, '_')
+      .replace(/^_+|_+$/g, '');
+    const startMonth = schedule.weekStartDate.toLocaleDateString('en-US', { month: 'short' });
+    const endMonth = schedule.weekEndDate.toLocaleDateString('en-US', { month: 'short' });
+    const dateRange = startMonth === endMonth
+      ? `${startMonth}${schedule.weekStartDate.getDate()}-${schedule.weekEndDate.getDate()}`
+      : `${startMonth}${schedule.weekStartDate.getDate()}-${endMonth}${schedule.weekEndDate.getDate()}`;
+    const filename = `${safeLocation}_${dateRange}_${schedule.weekEndDate.getFullYear()}.pdf`;
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(pdfBuffer);
   } catch (error) {
     next(error);

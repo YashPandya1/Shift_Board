@@ -35,6 +35,20 @@ const formatTime12 = (time) => {
   return `${hours % 12 || 12}:${String(minutes).padStart(2, '0')} ${hours >= 12 ? 'PM' : 'AM'}`;
 };
 
+const shiftDuration = (shift) => {
+  if (Number.isFinite(shift.totalHours)) {
+    return Math.round(shift.totalHours * 100) / 100;
+  }
+  const toMinutes = (time) => {
+    const [hours, minutes] = time.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+  const start = toMinutes(shift.startTime);
+  let end = toMinutes(shift.endTime);
+  if (end <= start) end += 24 * 60;
+  return Math.round(Math.max(0, (end - start - (shift.breakLength || 0)) / 60) * 100) / 100;
+};
+
 const formatDayHeader = (d) => ({
   day: d.toLocaleDateString('en-US', { weekday: 'short' }),
   date: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
@@ -110,7 +124,10 @@ const drawScheduleGrid = (doc, days, shiftsByDay) => {
           doc.save().rect(x + 2, y + 2, 2, blockHeight - 4).fill(THEME.primary).restore();
           doc.fillColor(THEME.text).font('Helvetica-Bold').fontSize(7.5);
           doc.text(employeeName(shift), x + 7, y + 6, {
-            width: dayColWidth - 11, ellipsis: true, align: 'left',
+            width: dayColWidth - 43, ellipsis: true, align: 'left',
+          });
+          doc.text(`(${shiftDuration(shift)}h)`, x + dayColWidth - 36, y + 6, {
+            width: 31, align: 'right',
           });
           doc.fillColor(THEME.muted).font('Helvetica').fontSize(7);
           doc.text(`${formatTime12(shift.startTime)} – ${formatTime12(shift.endTime)}`, x + 7, y + 19, {
@@ -219,8 +236,8 @@ export const generateWeeklySchedulePDF = async (schedule, shifts, options = {}) 
     doc.text(
       `Generated ${new Date().toLocaleString('en-US')}  ·  ${shifts.length} shift${shifts.length === 1 ? '' : 's'}  ·  ${totalHours} total hours`,
       40,
-      doc.page.height - 28,
-      { width: doc.page.width - 80, align: 'center' },
+      doc.page.height - 50,
+      { width: doc.page.width - 80, align: 'center', lineBreak: false },
     );
 
     doc.end();

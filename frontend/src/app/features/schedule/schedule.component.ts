@@ -19,6 +19,7 @@ import { FullCalendarModule, FullCalendarComponent } from '@fullcalendar/angular
 
 import {
   CalendarOptions, EventClickArg, EventDropArg, DateSelectArg, EventInput, EventContentArg,
+  EventMountArg,
 } from '@fullcalendar/core';
 
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -38,12 +39,17 @@ import {
   toFullCalendarBusinessHours, getCalendarTimeBounds, getHiddenDays, formatHoursSummary,
 
 } from '../../core/utils/operating-hours';
+import { employeeColor } from '../../core/utils/employee-colors';
 
 import {
   scheduleStartDayToFirstDay,
 } from '../../core/utils/schedule-utils';
 
 import { ShiftDialogComponent, ShiftDialogResult } from './shift-dialog.component';
+import {
+  CopyDayDialogComponent,
+  CopyDayDialogResult,
+} from './copy-day-dialog.component';
 
 
 
@@ -102,11 +108,12 @@ interface WeekScheduleData {
 
         <div class="header-actions">
 
-          <mat-form-field appearance="outline" class="location-select">
+          <mat-form-field appearance="outline" subscriptSizing="dynamic" class="location-select">
 
             <mat-label>Location</mat-label>
 
-            <mat-select [(value)]="selectedLocationId" (selectionChange)="onLocationChange()">
+            <mat-select [(value)]="selectedLocationId" panelClass="schedule-location-panel"
+                        (selectionChange)="onLocationChange()">
 
               @for (loc of locations; track loc._id) {
 
@@ -121,20 +128,6 @@ interface WeekScheduleData {
           <button mat-stroked-button (click)="openAddShift()" [disabled]="!selectedLocationId">
 
             <mat-icon>add</mat-icon> Add Shift
-
-          </button>
-
-          <button mat-stroked-button color="primary" (click)="copyPreviousWeek()"
-                  [disabled]="!selectedLocationId || !weekStart || copyingPreviousWeek">
-
-            <mat-icon>content_copy</mat-icon>
-            {{ copyingPreviousWeek ? 'Copying…' : 'Copy Previous Week' }}
-
-          </button>
-
-          <button mat-flat-button color="primary" (click)="publishSchedule()" [disabled]="!currentScheduleId">
-
-            <mat-icon>publish</mat-icon> Publish
 
           </button>
 
@@ -196,13 +189,33 @@ interface WeekScheduleData {
 
 
 
-        <div class="view-toggle">
+        <div class="calendar-toolbar">
 
-          <button mat-button [class.active]="currentView === 'timeGridWeek'" (click)="changeView('timeGridWeek')">Week</button>
+          <div class="view-toggle">
 
-          <button mat-button [class.active]="currentView === 'timeGridDay'" (click)="changeView('timeGridDay')">Day</button>
+            <button mat-button [class.active]="currentView === 'timeGridWeek'" (click)="changeView('timeGridWeek')">Week</button>
 
-          <button mat-button [class.active]="currentView === 'dayGridMonth'" (click)="changeView('dayGridMonth')">Month</button>
+            <button mat-button [class.active]="currentView === 'timeGridDay'" (click)="changeView('timeGridDay')">Day</button>
+
+            <button mat-button [class.active]="currentView === 'dayGridMonth'" (click)="changeView('dayGridMonth')">Month</button>
+
+          </div>
+
+          <div class="copy-actions">
+
+            <button mat-stroked-button color="primary" (click)="copyPreviousWeek()"
+                    [disabled]="!selectedLocationId || !weekStart || copyingPreviousWeek">
+              <mat-icon>content_copy</mat-icon>
+              {{ copyingPreviousWeek ? 'Copying…' : 'Copy Previous Week' }}
+            </button>
+
+            <button mat-stroked-button (click)="openCopyDay()"
+                    [disabled]="!shifts.length || copyingDay">
+              <mat-icon>content_copy</mat-icon>
+              {{ copyingDay ? 'Copying…' : 'Copy Day' }}
+            </button>
+
+          </div>
 
         </div>
 
@@ -254,7 +267,7 @@ interface WeekScheduleData {
 
     .header-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
-    .location-select { width: 200px; margin: 0; }
+    .location-select { width: clamp(280px, 32vw, 420px); margin: 0; }
 
     .hours-hint {
 
@@ -266,11 +279,16 @@ interface WeekScheduleData {
 
     }
 
-    .view-toggle { margin-bottom: 16px;
+    .calendar-toolbar {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; margin-bottom: 16px; flex-wrap: wrap;
+    }
+    .view-toggle {
 
       button.active { background: rgba(25,118,210,0.1); color: var(--sb-primary); }
 
     }
+    .copy-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 
     .calendar-container { padding: 0; overflow: hidden; border: 1px solid #d8e3ef; box-shadow: none; }
     .hours-table-card { margin-top: 16px; padding: 18px; box-shadow: none; border: 1px solid #d8e3ef; }
@@ -281,9 +299,23 @@ interface WeekScheduleData {
     .hours-table th:last-child, .hours-table td:last-child { text-align: right; }
     :host ::ng-deep .fc .fc-timegrid-slot-label,
     :host ::ng-deep .fc .fc-col-header-cell-cushion { color: #36536e; font-size: 0.78rem; }
-    :host ::ng-deep .fc .fc-event { box-shadow: none; }
+    :host ::ng-deep .fc .fc-event {
+      box-shadow: none; border-width: 1px 1px 1px 3px; border-radius: 4px;
+    }
+    :host ::ng-deep .fc .fc-timegrid-event-harness { margin-right: 2px; }
+    :host ::ng-deep .fc .expanded-shift-harness {
+      left: 0 !important; right: 0 !important; z-index: 50 !important; margin-right: 0;
+    }
+    :host ::ng-deep .fc .expanded-shift-event {
+      min-height: 46px; box-shadow: 0 4px 12px rgba(20, 48, 72, 0.24);
+    }
+    :host ::ng-deep .fc .fc-timegrid-more-link {
+      background: #eef5fb; border: 1px solid #a9bfd3; border-radius: 4px;
+      color: #244f76; font-size: 0.72rem; font-weight: 600; padding: 2px 4px;
+    }
+    :host ::ng-deep .fc .fc-more-popover { max-width: min(360px, calc(100vw - 32px)); }
     :host ::ng-deep .compact-shift {
-      display: flex; align-items: flex-start; gap: 4px; min-width: 0; padding: 2px 3px;
+      display: flex; align-items: flex-start; gap: 4px; min-width: 0; width: 100%; padding: 2px 3px;
       font-size: 0.72rem; line-height: 1.15;
     }
     :host ::ng-deep .employee-indicator {
@@ -292,8 +324,16 @@ interface WeekScheduleData {
       font-size: 0.58rem; font-weight: 700;
     }
     :host ::ng-deep .shift-details { overflow: hidden; }
-    :host ::ng-deep .shift-employee { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    :host ::ng-deep .shift-employee { display: flex; gap: 3px; min-width: 0; white-space: nowrap; font-weight: 600; }
+    :host ::ng-deep .shift-name { overflow: hidden; text-overflow: ellipsis; }
+    :host ::ng-deep .shift-duration { flex-shrink: 0; }
     :host ::ng-deep .shift-time { white-space: nowrap; font-size: 0.64rem; opacity: 0.85; }
+    :host ::ng-deep .shift-edit-button {
+      display: none; flex-shrink: 0; align-self: center; border: 1px solid currentColor;
+      border-radius: 4px; background: rgba(255,255,255,0.8); color: #244f76;
+      padding: 3px 7px; font: inherit; font-weight: 600; cursor: pointer;
+    }
+    :host ::ng-deep .expanded-shift-event .shift-edit-button { display: inline-flex; }
 
     .empty-state {
 
@@ -306,7 +346,7 @@ interface WeekScheduleData {
     }
 
     @media print {
-      .sb-page-header, .hours-hint, .view-toggle { display: none !important; }
+      .sb-page-header, .hours-hint, .view-toggle, .copy-actions { display: none !important; }
       .calendar-container, .hours-table-card { border: 1px solid #999; box-shadow: none; break-inside: avoid; }
       :host ::ng-deep .fc .fc-button { display: none !important; }
       :host ::ng-deep .fc .fc-event {
@@ -357,7 +397,9 @@ export class ScheduleComponent implements OnInit {
   weeklyEmployeeHours: { id: string; name: string; shiftCount: number; hours: number }[] = [];
 
   copyingPreviousWeek = false;
+  copyingDay = false;
   calendarVisible = true;
+  private expandedShiftId = '';
 
   scheduleStartDay = 'monday';
 
@@ -408,9 +450,25 @@ export class ScheduleComponent implements OnInit {
 
     eventConstraint: 'businessHours',
 
+    slotEventOverlap: false,
+
+    eventMaxStack: 3,
+
+    eventMinHeight: 30,
+
+    eventShortHeight: 24,
+
+    eventOrder: 'start,-duration,title',
+
+    moreLinkClick: 'popover',
+
+    dayMaxEvents: 4,
+
     events: [],
 
     eventContent: (info) => this.renderEventContent(info),
+
+    eventDidMount: (info) => this.addEventAccessibilityDetails(info),
 
     eventClick: (info) => this.onEventClick(info),
 
@@ -721,22 +779,22 @@ export class ScheduleComponent implements OnInit {
 
       : employeeDisplayName(emp, shift.userId);
 
-    const bg = shift.isOpenShift ? '#fff7e6' : '#e8f1fb';
-    const border = shift.isOpenShift ? '#d99a2b' : '#5b8fc9';
+    const colors = this.shiftColors(shift);
+    const hours = this.formatShiftHours(shift);
 
     return {
 
       id: shift._id,
 
-      title: empName,
+      title: `${empName} (${hours}h)`,
 
       start: `${shift.date.split('T')[0]}T${shift.startTime}`,
 
       end: `${shift.date.split('T')[0]}T${shift.endTime}`,
 
-      backgroundColor: bg,
+      backgroundColor: colors.background,
 
-      borderColor: border,
+      borderColor: colors.border,
 
       textColor: '#163a5f',
 
@@ -748,10 +806,31 @@ export class ScheduleComponent implements OnInit {
 
 
 
+  private shiftColors(shift: Shift): { background: string; border: string } {
+
+    if (shift.isOpenShift) return { background: '#fff7e6', border: '#d99a2b' };
+    const employeeId = typeof shift.employeeId === 'object'
+      ? shift.employeeId?._id
+      : shift.employeeId;
+    const border = employeeColor(employeeId || shift._id);
+    const hex = border.replace('#', '');
+    const tint = [0, 2, 4].map((offset) => {
+      const channel = parseInt(hex.slice(offset, offset + 2), 16);
+      return Math.round(channel + (255 - channel) * 0.88)
+        .toString(16)
+        .padStart(2, '0');
+    }).join('');
+    return { background: `#${tint}`, border };
+
+  }
+
+
+
   private renderEventContent(info: EventContentArg): { domNodes: Node[] } {
     const shift = info.event.extendedProps['shift'] as Shift;
     const employee = typeof shift.employeeId === 'object' ? shift.employeeId : null;
     const name = shift.isOpenShift ? 'Open' : employeeDisplayName(employee, shift.userId);
+    const hours = this.formatShiftHours(shift);
     const initials = shift.isOpenShift
       ? 'OS'
       : name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
@@ -761,17 +840,58 @@ export class ScheduleComponent implements OnInit {
     const indicator = document.createElement('span');
     indicator.className = 'employee-indicator';
     indicator.textContent = initials || '?';
+    indicator.style.backgroundColor = info.event.borderColor;
     const details = document.createElement('span');
     details.className = 'shift-details';
     const employeeName = document.createElement('div');
     employeeName.className = 'shift-employee';
-    employeeName.textContent = name;
+    const employeeLabel = document.createElement('span');
+    employeeLabel.className = 'shift-name';
+    employeeLabel.textContent = name;
+    const duration = document.createElement('span');
+    duration.className = 'shift-duration';
+    duration.textContent = `(${hours}h)`;
+    employeeName.append(employeeLabel, duration);
     const time = document.createElement('div');
     time.className = 'shift-time';
     time.textContent = `${format12Hour(shift.startTime)}–${format12Hour(shift.endTime)}`;
     details.append(employeeName, time);
-    wrapper.append(indicator, details);
+    const editButton = document.createElement('button');
+    editButton.type = 'button';
+    editButton.className = 'shift-edit-button';
+    editButton.textContent = 'Edit';
+    editButton.setAttribute('aria-label', `Edit ${name}'s shift`);
+    editButton.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.openShiftEditor(shift);
+    });
+    wrapper.append(indicator, details, editButton);
     return { domNodes: [wrapper] };
+  }
+
+
+
+  private addEventAccessibilityDetails(info: EventMountArg): void {
+
+    const shift = info.event.extendedProps['shift'] as Shift;
+    const employee = typeof shift.employeeId === 'object' ? shift.employeeId : null;
+    const name = shift.isOpenShift ? 'Open Shift' : employeeDisplayName(employee, shift.userId);
+    const description = `${name}, ${this.formatShiftHours(shift)} hours, `
+      + `${format12Hour(shift.startTime)} to ${format12Hour(shift.endTime)}`;
+    info.el.title = description;
+    info.el.setAttribute('aria-label', description);
+    if (info.event.id === this.expandedShiftId) this.setShiftExpanded(info.el, true);
+
+  }
+
+
+
+  private formatShiftHours(shift: Shift): string {
+
+    const hours = shift.totalHours ?? this.calculateShiftHours(shift);
+    return String(Math.round(hours * 100) / 100);
+
   }
 
 
@@ -822,6 +942,7 @@ export class ScheduleComponent implements OnInit {
 
   onDatesSet(info: { start: Date }): void {
 
+    if (this.expandedShiftId) this.clearExpandedShift();
     if (!this.selectedLocationId) return;
 
     if (!this.weekStart || !this.weekEnd) {
@@ -897,8 +1018,19 @@ export class ScheduleComponent implements OnInit {
 
   onEventClick(info: EventClickArg): void {
 
-    const shift = info.event.extendedProps['shift'] as Shift;
+    const isExpanded = this.expandedShiftId === info.event.id;
+    this.clearExpandedShift();
+    if (isExpanded) return;
+    this.expandedShiftId = info.event.id;
+    this.setShiftExpanded(info.el, true);
 
+  }
+
+
+
+  private openShiftEditor(shift: Shift): void {
+
+    this.clearExpandedShift();
     this.dialog.open(ShiftDialogComponent, {
 
       width: '420px',
@@ -922,6 +1054,33 @@ export class ScheduleComponent implements OnInit {
       },
 
     }).afterClosed().subscribe((result?: ShiftDialogResult) => this.applyShiftDialogResult(result));
+
+  }
+
+
+
+  private setShiftExpanded(eventElement: HTMLElement, expanded: boolean): void {
+
+    const harness = eventElement.closest(
+      '.fc-timegrid-event-harness, .fc-daygrid-event-harness'
+    ) as HTMLElement | null;
+    eventElement.classList.toggle('expanded-shift-event', expanded);
+    eventElement.setAttribute('aria-expanded', String(expanded));
+    harness?.classList.toggle('expanded-shift-harness', expanded);
+
+  }
+
+
+
+  private clearExpandedShift(): void {
+
+    document.querySelectorAll('.expanded-shift-event').forEach((element) => {
+      element.classList.remove('expanded-shift-event');
+      element.setAttribute('aria-expanded', 'false');
+    });
+    document.querySelectorAll('.expanded-shift-harness')
+      .forEach((element) => element.classList.remove('expanded-shift-harness'));
+    this.expandedShiftId = '';
 
   }
 
@@ -1073,16 +1232,6 @@ export class ScheduleComponent implements OnInit {
 
 
 
-  publishSchedule(): void {
-
-    if (!this.currentScheduleId) return;
-
-    this.scheduleService.publish(this.currentScheduleId).subscribe(() => this.reloadSchedule());
-
-  }
-
-
-
   copyPreviousWeek(): void {
 
     if (!this.selectedLocationId || !this.weekStart) return;
@@ -1110,6 +1259,61 @@ export class ScheduleComponent implements OnInit {
           alert(err.error?.message || 'Failed to copy last week’s schedule');
         },
       });
+
+  }
+
+
+
+  openCopyDay(): void {
+
+    if (!this.weekStart || !this.selectedLocationId) return;
+    const start = new Date(`${this.weekStart.split('T')[0]}T12:00:00`);
+    const days = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(start);
+      date.setDate(start.getDate() + index);
+      const dateKey = formatLocalDate(date);
+      return {
+        date: dateKey,
+        label: date.toLocaleDateString(undefined, {
+          weekday: 'long',
+          month: 'short',
+          day: 'numeric',
+        }),
+        shiftCount: this.shifts.filter((shift) => shift.date.split('T')[0] === dateKey).length,
+      };
+    });
+
+    this.dialog.open(CopyDayDialogComponent, {
+      width: '460px',
+      data: { days },
+    }).afterClosed().subscribe((result?: CopyDayDialogResult) => {
+      if (!result) return;
+      this.copyingDay = true;
+      this.scheduleService.copyDay(
+        this.selectedLocationId,
+        result.sourceDate,
+        result.targetDates,
+        result.overwrite
+      ).subscribe({
+        next: (res) => {
+          const targetDates = new Set(res.data.targetDates.map((date) => date.split('T')[0]));
+          this.shifts = [
+            ...this.shifts.filter((shift) => !targetDates.has(shift.date.split('T')[0])),
+            ...res.data.shifts,
+          ].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+          this.currentScheduleId = res.data.schedule._id;
+          this.buildEmployeeHours();
+          this.updateCurrentWeekCache();
+          this.rebuildCalendar();
+          this.copyingDay = false;
+          this.cdr.markForCheck();
+        },
+        error: (err) => {
+          this.copyingDay = false;
+          alert(err.error?.message || 'Failed to copy the day’s schedule');
+        },
+      });
+    });
 
   }
 
@@ -1275,9 +1479,21 @@ export class ScheduleComponent implements OnInit {
 
       a.href = url;
 
-      a.download = 'schedule.pdf';
+      const locationName = (this.selectedLocation?.name || 'Location')
+        .trim()
+        .replace(/[^a-z0-9]+/gi, '_')
+        .replace(/^_+|_+$/g, '');
+      const start = new Date(`${this.weekStart.split('T')[0]}T12:00:00`);
+      const end = new Date(`${this.weekEnd.split('T')[0]}T12:00:00`);
+      const startMonth = start.toLocaleDateString('en-US', { month: 'short' });
+      const endMonth = end.toLocaleDateString('en-US', { month: 'short' });
+      const dateRange = startMonth === endMonth
+        ? `${startMonth}${start.getDate()}-${end.getDate()}`
+        : `${startMonth}${start.getDate()}-${endMonth}${end.getDate()}`;
+      a.download = `${locationName}_${dateRange}_${end.getFullYear()}.pdf`;
 
       a.click();
+      URL.revokeObjectURL(url);
 
     });
 

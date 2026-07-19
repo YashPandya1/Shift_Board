@@ -3,7 +3,7 @@ import {
   getSchedules, getWeekSchedule, createSchedule, createShift,
   updateShift, deleteShift, copyPreviousWeek, publishSchedule,
   validateShift, suggestEmployees, exportSchedulePDF,
-  claimOpenShift, approveClaimedShift, clearSchedule,
+  claimOpenShift, approveClaimedShift, clearSchedule, copyScheduleDay,
 } from '../controllers/scheduleController.js';
 import { authenticate, isOwnerOrManager, requireAdmin } from '../middleware/auth.js';
 
@@ -15,6 +15,7 @@ router.get('/', getSchedules);
 router.get('/week', getWeekSchedule);
 router.post('/', isOwnerOrManager, createSchedule);
 router.post('/copy-week', isOwnerOrManager, copyPreviousWeek);
+router.post('/copy-day', isOwnerOrManager, copyScheduleDay);
 router.post('/validate', isOwnerOrManager, validateShift);
 router.get('/suggest-employees', isOwnerOrManager, suggestEmployees);
 router.delete('/clear-week', isOwnerOrManager, clearSchedule);
