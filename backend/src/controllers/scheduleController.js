@@ -203,6 +203,21 @@ export const updateShift = async (req, res, next) => {
     if (updates.date) updates.date = parseScheduleDate(updates.date);
     Object.assign(shift, updates);
 
+    if (updates.isOpenShift === true) {
+      shift.employeeId = undefined;
+      shift.userId = undefined;
+      shift.hourlyWage = 0;
+    } else if (updates.employeeId) {
+      const employee = await EmployeeProfile.findOne({
+        _id: updates.employeeId,
+        organizationId: req.user.organizationId,
+      });
+      if (!employee) throw new AppError('Employee not found', 404);
+      shift.employeeId = employee._id;
+      shift.userId = employee.userId || undefined;
+      shift.hourlyWage = employee.hourlyWage || 0;
+    }
+
     const location = await Location.findById(shift.locationId);
     const hoursCheck = validateShiftWithinHours(
       location,
@@ -212,7 +227,13 @@ export const updateShift = async (req, res, next) => {
     );
     if (!hoursCheck.valid) throw new AppError(hoursCheck.message, 400);
 
-    if (req.body.startTime || req.body.endTime || req.body.breakLength) {
+    if (
+      req.body.startTime
+      || req.body.endTime
+      || req.body.breakLength
+      || req.body.employeeId
+      || req.body.isOpenShift !== undefined
+    ) {
       shift.totalHours = calculateShiftHours(shift.startTime, shift.endTime, shift.breakLength);
       shift.laborCost = (shift.hourlyWage || 0) * shift.totalHours;
     }
@@ -223,6 +244,7 @@ export const updateShift = async (req, res, next) => {
 
     const populated = await shift.populate([
       { path: 'userId', select: 'firstName lastName' },
+      { path: 'employeeId', select: 'firstName lastName position hourlyWage phone' },
       { path: 'locationId', select: 'name' },
     ]);
 

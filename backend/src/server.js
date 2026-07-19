@@ -32,7 +32,8 @@ app.set('io', io);
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: Number(process.env.RATE_LIMIT_MAX)
+    || (process.env.NODE_ENV === 'production' ? 300 : 1000),
   message: { success: false, message: 'Too many requests, please try again later' },
 });
 

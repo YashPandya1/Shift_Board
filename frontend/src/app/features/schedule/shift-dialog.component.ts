@@ -25,6 +25,10 @@ export interface ShiftDialogData {
   useNextAvailable?: boolean;
 }
 
+export type ShiftDialogResult =
+  | { action: 'saved'; shift: Shift }
+  | { action: 'deleted'; shiftId: string };
+
 @Component({
   selector: 'sb-shift-dialog',
   standalone: true,
@@ -331,7 +335,7 @@ export class ShiftDialogComponent implements OnInit {
       : this.scheduleService.createShift(payload);
 
     req.subscribe({
-      next: () => this.dialogRef.close(true),
+      next: (res) => this.dialogRef.close({ action: 'saved', shift: res.data } satisfies ShiftDialogResult),
       error: (err) => {
         this.saving = false;
         this.error = err.error?.message || 'Failed to save shift';
@@ -343,7 +347,10 @@ export class ShiftDialogComponent implements OnInit {
     if (!this.data.shift || !confirm('Delete this shift?')) return;
     this.saving = true;
     this.scheduleService.deleteShift(this.data.shift._id).subscribe({
-      next: () => this.dialogRef.close(true),
+      next: () => this.dialogRef.close({
+        action: 'deleted',
+        shiftId: this.data.shift!._id,
+      } satisfies ShiftDialogResult),
       error: (err) => {
         this.saving = false;
         this.error = err.error?.message || 'Failed to delete shift';

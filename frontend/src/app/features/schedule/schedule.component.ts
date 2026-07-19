@@ -43,7 +43,7 @@ import {
   scheduleStartDayToFirstDay,
 } from '../../core/utils/schedule-utils';
 
-import { ShiftDialogComponent } from './shift-dialog.component';
+import { ShiftDialogComponent, ShiftDialogResult } from './shift-dialog.component';
 
 
 
@@ -65,6 +65,15 @@ function format12Hour(time: string): string {
   const [hours, minutes] = time.split(':').map(Number);
   const suffix = hours >= 12 ? 'PM' : 'AM';
   return `${hours % 12 || 12}:${String(minutes).padStart(2, '0')} ${suffix}`;
+}
+
+interface WeekScheduleData {
+  shifts: Shift[];
+  schedules?: Schedule[];
+  weekStart: string;
+  weekEnd: string;
+  scheduleStartDay?: string;
+  location?: Location;
 }
 
 
@@ -201,7 +210,9 @@ function format12Hour(time: string): string {
 
         <div class="sb-card calendar-container">
 
-          <full-calendar #calendar [options]="calendarOptions" />
+          @if (calendarVisible) {
+            <full-calendar #calendar [options]="calendarOptions" />
+          }
 
         </div>
 
@@ -346,6 +357,7 @@ export class ScheduleComponent implements OnInit {
   weeklyEmployeeHours: { id: string; name: string; shiftCount: number; hours: number }[] = [];
 
   copyingPreviousWeek = false;
+  calendarVisible = true;
 
   scheduleStartDay = 'monday';
 
@@ -354,6 +366,9 @@ export class ScheduleComponent implements OnInit {
   weekEnd = '';
 
   private loadedWeekKey = '';
+  private visibleWeekKey = '';
+  private weekCache = new Map<string, WeekScheduleData>();
+  private loadingWeekKeys = new Set<string>();
 
 
 
@@ -523,7 +538,7 @@ export class ScheduleComponent implements OnInit {
 
 
 
-  loadSchedule(anchorDate?: Date): void {
+  loadSchedule(anchorDate?: Date, force = false): void {
 
     if (!this.selectedLocationId) return;
 
@@ -532,66 +547,47 @@ export class ScheduleComponent implements OnInit {
       || this.calendarComponent?.getApi()?.getDate()
 
       || new Date();
+    const requestedLocationId = this.selectedLocationId;
+    const requestedKey = this.weekKeyForDate(date);
+    this.visibleWeekKey = requestedKey;
+
+    if (!force) {
+      if (requestedKey === this.loadedWeekKey) return;
+      const cached = this.weekCache.get(requestedKey);
+      if (cached) {
+        this.applyWeekData(cached);
+        this.prefetchAdjacentWeeks(new Date(cached.weekStart));
+        return;
+      }
+    }
+    if (this.loadingWeekKeys.has(requestedKey)) return;
+    this.loadingWeekKeys.add(requestedKey);
 
     this.scheduleService.getWeek({
 
-      locationId: this.selectedLocationId,
+      locationId: requestedLocationId,
 
       date: date.toISOString(),
 
     }).subscribe({
 
       next: (res) => {
-
-        this.shifts = res.data.shifts;
-
-        this.weekStart = res.data.weekStart;
-
-        this.weekEnd = res.data.weekEnd;
-
-        if (res.data.scheduleStartDay) {
-
-          this.scheduleStartDay = res.data.scheduleStartDay;
-
-          this.applyScheduleStartDay();
-
-        }
-
-        const schedules = (res.data as { schedules?: Schedule[] }).schedules || [];
-
-        const rawScheduleId = schedules[0]?._id || this.shifts[0]?.scheduleId;
-
-        this.currentScheduleId = typeof rawScheduleId === 'string'
-
-          ? rawScheduleId
-
-          : (rawScheduleId && typeof rawScheduleId === 'object' && '_id' in rawScheduleId)
-
-            ? String((rawScheduleId as { _id: string })._id)
-
-            : '';
-
-        this.loadedWeekKey = this.buildWeekCacheKey(this.weekStart);
-
-        if (res.data.location) {
-
-          this.selectedLocation = res.data.location as Location;
-
-          setTimeout(() => this.applyLocationHours());
-
-        }
-
-        const events = this.shifts.map((s) => this.shiftToEvent(s));
-
-        this.buildEmployeeHours();
-
-        this.syncCalendarEvents(events);
-
-        this.cdr.markForCheck();
+        this.loadingWeekKeys.delete(requestedKey);
+        const canonicalKey = `${requestedLocationId}-${res.data.weekStart.split('T')[0]}`;
+        this.weekCache.set(canonicalKey, res.data);
+        if (
+          this.selectedLocationId !== requestedLocationId
+          || this.visibleWeekKey !== requestedKey
+        ) return;
+        this.applyWeekData(res.data);
+        this.prefetchAdjacentWeeks(new Date(res.data.weekStart));
 
       },
 
-      error: (err) => alert(err.error?.message || 'Failed to load schedule'),
+      error: (err) => {
+        this.loadingWeekKeys.delete(requestedKey);
+        alert(err.error?.message || 'Failed to load schedule');
+      },
 
     });
 
@@ -599,9 +595,88 @@ export class ScheduleComponent implements OnInit {
 
 
 
+  private applyWeekData(data: WeekScheduleData): void {
+
+    this.shifts = data.shifts;
+    this.weekStart = data.weekStart;
+    this.weekEnd = data.weekEnd;
+    if (data.scheduleStartDay) {
+      this.scheduleStartDay = data.scheduleStartDay;
+      this.applyScheduleStartDay();
+    }
+    const schedules = data.schedules || [];
+    const rawScheduleId = schedules[0]?._id || this.shifts[0]?.scheduleId;
+    this.currentScheduleId = typeof rawScheduleId === 'string'
+      ? rawScheduleId
+      : (rawScheduleId && typeof rawScheduleId === 'object' && '_id' in rawScheduleId)
+        ? String((rawScheduleId as { _id: string })._id)
+        : '';
+    this.loadedWeekKey = this.buildWeekCacheKey(this.weekStart);
+    if (data.location) {
+      this.selectedLocation = data.location;
+      setTimeout(() => this.applyLocationHours());
+    }
+    this.buildEmployeeHours();
+    this.syncCalendarEvents(this.shifts.map((shift) => this.shiftToEvent(shift)));
+    this.cdr.markForCheck();
+
+  }
+
+
+
   private buildWeekCacheKey(weekStart: string): string {
 
-    return `${this.selectedLocationId}-${formatLocalDate(new Date(weekStart))}`;
+    return `${this.selectedLocationId}-${weekStart.split('T')[0]}`;
+
+  }
+
+
+
+  private weekKeyForDate(date: Date): string {
+
+    const weekStart = new Date(date);
+    weekStart.setHours(12, 0, 0, 0);
+    const firstDay = scheduleStartDayToFirstDay(this.scheduleStartDay);
+    const dayOffset = (weekStart.getDay() - firstDay + 7) % 7;
+    weekStart.setDate(weekStart.getDate() - dayOffset);
+    return `${this.selectedLocationId}-${formatLocalDate(weekStart)}`;
+
+  }
+
+
+
+  private prefetchAdjacentWeeks(anchor: Date): void {
+
+    for (const offset of [-7, 7]) {
+      const date = new Date(anchor);
+      date.setDate(date.getDate() + offset);
+      const key = this.weekKeyForDate(date);
+      if (this.weekCache.has(key) || this.loadingWeekKeys.has(key)) continue;
+      this.loadingWeekKeys.add(key);
+      this.scheduleService.getWeek({
+        locationId: this.selectedLocationId,
+        date: date.toISOString(),
+      }).subscribe({
+        next: (res) => {
+          this.loadingWeekKeys.delete(key);
+          this.weekCache.set(key, res.data);
+          if (this.visibleWeekKey === key) {
+            this.applyWeekData(res.data);
+            this.prefetchAdjacentWeeks(new Date(res.data.weekStart));
+          }
+        },
+        error: () => this.loadingWeekKeys.delete(key),
+      });
+    }
+
+  }
+
+
+
+  private updateCurrentWeekCache(): void {
+
+    const cached = this.weekCache.get(this.loadedWeekKey);
+    if (cached) this.weekCache.set(this.loadedWeekKey, { ...cached, shifts: [...this.shifts] });
 
   }
 
@@ -611,8 +686,11 @@ export class ScheduleComponent implements OnInit {
 
     const api = this.calendarComponent?.getApi();
     if (api) {
-      api.removeAllEvents();
-      events.forEach((event) => api.addEvent(event));
+      api.batchRendering(() => {
+        api.removeAllEvents();
+        events.forEach((event) => api.addEvent(event));
+      });
+      return;
     }
     this.calendarOptions = { ...this.calendarOptions, events };
 
@@ -622,11 +700,12 @@ export class ScheduleComponent implements OnInit {
 
   private reloadSchedule(): void {
 
+    if (this.loadedWeekKey) this.weekCache.delete(this.loadedWeekKey);
     this.loadedWeekKey = '';
 
     const anchor = this.calendarComponent?.getApi()?.getDate() || new Date();
 
-    this.loadSchedule(anchor);
+    this.loadSchedule(anchor, true);
 
   }
 
@@ -780,7 +859,13 @@ export class ScheduleComponent implements OnInit {
 
     this.scheduleService.clearSchedule(params).subscribe({
 
-      next: () => this.reloadSchedule(),
+      next: () => {
+        this.shifts = [];
+        this.buildEmployeeHours();
+        this.syncCalendarEvents([]);
+        this.updateCurrentWeekCache();
+        this.cdr.markForCheck();
+      },
 
       error: (err) => alert(err.error?.message || 'Failed to clear schedule'),
 
@@ -836,7 +921,7 @@ export class ScheduleComponent implements OnInit {
 
       },
 
-    }).afterClosed().subscribe((saved) => { if (saved) this.reloadSchedule(); });
+    }).afterClosed().subscribe((result?: ShiftDialogResult) => this.applyShiftDialogResult(result));
 
   }
 
@@ -873,7 +958,88 @@ export class ScheduleComponent implements OnInit {
         useNextAvailable,
       },
 
-    }).afterClosed().subscribe((saved) => { if (saved) this.reloadSchedule(); });
+    }).afterClosed().subscribe((result?: ShiftDialogResult) => this.applyShiftDialogResult(result));
+
+  }
+
+
+
+  private applyShiftDialogResult(result?: ShiftDialogResult): void {
+
+    if (!result) return;
+    let calendarShift: Shift | undefined;
+    let removedShiftId: string | undefined;
+    if (result.action === 'deleted') {
+      this.shifts = this.shifts.filter((shift) => shift._id !== result.shiftId);
+      removedShiftId = result.shiftId;
+    } else {
+      const shiftDate = result.shift.date.split('T')[0];
+      const isInDisplayedWeek = shiftDate >= this.weekStart.split('T')[0]
+        && shiftDate <= this.weekEnd.split('T')[0];
+      const existingIndex = this.shifts.findIndex((shift) => shift._id === result.shift._id);
+      if (!isInDisplayedWeek) {
+        if (existingIndex >= 0) this.shifts = this.shifts.filter((shift) => shift._id !== result.shift._id);
+        removedShiftId = result.shift._id;
+      } else if (existingIndex >= 0) {
+        this.shifts = this.shifts.map((shift, index) => index === existingIndex ? result.shift : shift);
+        calendarShift = result.shift;
+      } else {
+        this.shifts = [...this.shifts, result.shift]
+          .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+        calendarShift = result.shift;
+      }
+    }
+
+    this.buildEmployeeHours();
+    this.updateCalendarShift(calendarShift, removedShiftId);
+    this.updateCurrentWeekCache();
+    this.cdr.markForCheck();
+
+  }
+
+
+
+  private updateCalendarShift(shift?: Shift, removedShiftId?: string): void {
+
+    const api = this.calendarComponent?.getApi();
+    if (!api) {
+      this.calendarOptions = {
+        ...this.calendarOptions,
+        events: this.shifts.map((currentShift) => this.shiftToEvent(currentShift)),
+      };
+      return;
+    }
+
+    const eventId = removedShiftId || shift?._id;
+    const existingEvent = eventId ? api.getEventById(eventId) : null;
+    if (shift && !existingEvent) {
+      this.rebuildCalendar();
+      return;
+    }
+    existingEvent?.remove();
+    if (shift) api.addEvent(this.shiftToEvent(shift));
+
+  }
+
+
+
+  private rebuildCalendar(): void {
+
+    const api = this.calendarComponent?.getApi();
+    const currentDate = api?.getDate() || new Date(this.weekStart);
+    const currentView = api?.view.type || this.currentView;
+    this.calendarOptions = {
+      ...this.calendarOptions,
+      initialDate: currentDate,
+      initialView: currentView,
+      events: this.shifts.map((shift) => this.shiftToEvent(shift)),
+    };
+    this.calendarVisible = false;
+    this.cdr.detectChanges();
+    this.calendarVisible = true;
+    this.cdr.detectChanges();
+    this.applyScheduleStartDay();
+    this.applyLocationHours();
 
   }
 
@@ -897,7 +1063,7 @@ export class ScheduleComponent implements OnInit {
 
     }).subscribe({
 
-      next: () => this.reloadSchedule(),
+      next: (res) => this.applyShiftDialogResult({ action: 'saved', shift: res.data }),
 
       error: () => info.revert(),
 
@@ -935,6 +1101,7 @@ export class ScheduleComponent implements OnInit {
           this.currentScheduleId = res.data.schedule._id;
           this.buildEmployeeHours();
           this.syncCalendarEvents(this.shifts.map((shift) => this.shiftToEvent(shift)));
+          this.updateCurrentWeekCache();
           this.copyingPreviousWeek = false;
           this.cdr.markForCheck();
         },
