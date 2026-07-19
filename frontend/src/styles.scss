@@ -123,3 +123,51 @@ body.dark-theme {
   .sb-page { padding: 16px; }
   .sb-page-header h1 { font-size: 1.35rem; }
 }
+
+@media print {
+  @page {
+    size: landscape;
+    margin: 0.4in;
+  }
+
+  html, body {
+    height: auto;
+    background: #fff !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .sidenav,
+  .toolbar,
+  .header-actions,
+  .hours-hint,
+  .view-toggle,
+  .fc-header-toolbar .fc-button-group {
+    display: none !important;
+  }
+
+  .layout-container,
+  mat-sidenav-content,
+  .main-content {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    margin: 0 !important;
+  }
+
+  .sb-page {
+    max-width: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .sb-card {
+    box-shadow: none !important;
+    break-inside: avoid;
+  }
+
+  .fc-event,
+  .hours-table tr {
+    break-inside: avoid;
+  }
+}

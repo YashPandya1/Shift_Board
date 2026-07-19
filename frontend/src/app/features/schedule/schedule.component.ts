@@ -1,4 +1,5 @@
 import { Component, inject, OnInit, ViewChild, ChangeDetectorRef } from '@angular/core';
+import { DecimalPipe } from '@angular/common';
 
 import { RouterLink } from '@angular/router';
 
@@ -16,7 +17,9 @@ import { MatDialog } from '@angular/material/dialog';
 
 import { FullCalendarModule, FullCalendarComponent } from '@fullcalendar/angular';
 
-import { CalendarOptions, EventClickArg, EventDropArg, DateSelectArg, EventInput } from '@fullcalendar/core';
+import {
+  CalendarOptions, EventClickArg, EventDropArg, DateSelectArg, EventInput, EventContentArg,
+} from '@fullcalendar/core';
 
 import dayGridPlugin from '@fullcalendar/daygrid';
 
@@ -35,8 +38,6 @@ import {
   toFullCalendarBusinessHours, getCalendarTimeBounds, getHiddenDays, formatHoursSummary,
 
 } from '../../core/utils/operating-hours';
-
-import { employeeColor, isLightColor } from '../../core/utils/employee-colors';
 
 import {
   scheduleStartDayToFirstDay,
@@ -60,6 +61,12 @@ function formatTime(d: Date): string {
 
 }
 
+function format12Hour(time: string): string {
+  const [hours, minutes] = time.split(':').map(Number);
+  const suffix = hours >= 12 ? 'PM' : 'AM';
+  return `${hours % 12 || 12}:${String(minutes).padStart(2, '0')} ${suffix}`;
+}
+
 
 
 @Component({
@@ -72,7 +79,7 @@ function formatTime(d: Date): string {
 
     RouterLink, MatButtonModule, MatIconModule, MatSelectModule,
 
-    MatFormFieldModule, MatMenuModule, FullCalendarModule,
+    MatFormFieldModule, MatMenuModule, FullCalendarModule, DecimalPipe,
 
   ],
 
@@ -122,9 +129,15 @@ function formatTime(d: Date): string {
 
           <mat-menu #moreMenu="matMenu">
 
-            <button mat-menu-item (click)="copyPreviousWeek()" [disabled]="!currentScheduleId">
+            <button mat-menu-item (click)="copyPreviousWeek()" [disabled]="!selectedLocationId || !weekStart">
 
               <mat-icon>content_copy</mat-icon> Copy Previous Week
+
+            </button>
+
+            <button mat-menu-item (click)="exportExcel()" [disabled]="!shifts.length">
+
+              <mat-icon>table_view</mat-icon> Export to Excel
 
             </button>
 
@@ -184,41 +197,39 @@ function formatTime(d: Date): string {
 
 
 
-        @if (legend.length) {
-
-          <div class="shift-legend">
-
-            @for (item of legend; track item.id) {
-
-              <span class="legend-item">
-
-                <span class="legend-dot" [style.background]="item.color"></span>
-
-                {{ item.name }}
-
-              </span>
-
-            }
-
-            <span class="legend-item">
-
-              <span class="legend-dot open-shift"></span>
-
-              Open Shift
-
-            </span>
-
-          </div>
-
-        }
-
-
-
         <div class="sb-card calendar-container">
 
           <full-calendar #calendar [options]="calendarOptions" />
 
         </div>
+
+        @if (weeklyEmployeeHours.length) {
+
+          <section class="sb-card hours-table-card">
+
+            <h2>Weekly employee hours</h2>
+
+            <table class="hours-table">
+
+              <thead>
+                <tr><th>Employee</th><th>Shifts</th><th>Hours</th></tr>
+              </thead>
+
+              <tbody>
+                @for (employee of weeklyEmployeeHours; track employee.id) {
+                  <tr>
+                    <td>{{ employee.name }}</td>
+                    <td>{{ employee.shiftCount }}</td>
+                    <td>{{ employee.hours | number:'1.1-2' }}</td>
+                  </tr>
+                }
+              </tbody>
+
+            </table>
+
+          </section>
+
+        }
 
       }
 
@@ -248,19 +259,28 @@ function formatTime(d: Date): string {
 
     }
 
-    .calendar-container { padding: 0; overflow: hidden; }
-
-    .shift-legend {
-
-      display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px;
-
-      .legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; }
-
-      .legend-dot { width: 12px; height: 12px; border-radius: 3px; }
-
-      .legend-dot.open-shift { background: #f59e0b; }
-
+    .calendar-container { padding: 0; overflow: hidden; border: 1px solid #d8e3ef; box-shadow: none; }
+    .hours-table-card { margin-top: 16px; padding: 18px; box-shadow: none; border: 1px solid #d8e3ef; }
+    .hours-table-card h2 { margin: 0 0 12px; color: #24496d; font-size: 1rem; }
+    .hours-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    .hours-table th, .hours-table td { padding: 8px 10px; border-bottom: 1px solid #e4eaf0; text-align: left; }
+    .hours-table th { color: #496783; font-weight: 600; background: #f6f9fc; }
+    .hours-table th:last-child, .hours-table td:last-child { text-align: right; }
+    :host ::ng-deep .fc .fc-timegrid-slot-label,
+    :host ::ng-deep .fc .fc-col-header-cell-cushion { color: #36536e; font-size: 0.78rem; }
+    :host ::ng-deep .fc .fc-event { box-shadow: none; }
+    :host ::ng-deep .compact-shift {
+      display: flex; align-items: flex-start; gap: 4px; min-width: 0; padding: 2px 3px;
+      font-size: 0.72rem; line-height: 1.15;
     }
+    :host ::ng-deep .employee-indicator {
+      display: inline-flex; align-items: center; justify-content: center; flex: 0 0 20px;
+      width: 20px; height: 20px; border-radius: 50%; color: #fff; background: #2f6fa9;
+      font-size: 0.58rem; font-weight: 700;
+    }
+    :host ::ng-deep .shift-details { overflow: hidden; }
+    :host ::ng-deep .shift-employee { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+    :host ::ng-deep .shift-time { white-space: nowrap; font-size: 0.64rem; opacity: 0.85; }
 
     .empty-state {
 
@@ -270,6 +290,19 @@ function formatTime(d: Date): string {
 
       p { color: var(--sb-text-secondary); margin: 16px 0; }
 
+    }
+
+    @media print {
+      .sb-page-header, .hours-hint, .view-toggle { display: none !important; }
+      .calendar-container, .hours-table-card { border: 1px solid #999; box-shadow: none; break-inside: avoid; }
+      :host ::ng-deep .fc .fc-button { display: none !important; }
+      :host ::ng-deep .fc .fc-event {
+        background: #fff !important; border: 1px solid #777 !important; color: #111 !important;
+      }
+      :host ::ng-deep .employee-indicator {
+        background: #fff !important; border: 1px solid #555; color: #111 !important;
+      }
+      .hours-table th { background: #fff; }
     }
 
   `],
@@ -308,7 +341,7 @@ export class ScheduleComponent implements OnInit {
 
   hoursSummary = '';
 
-  legend: { id: string; name: string; color: string }[] = [];
+  weeklyEmployeeHours: { id: string; name: string; shiftCount: number; hours: number }[] = [];
 
   scheduleStartDay = 'monday';
 
@@ -340,6 +373,10 @@ export class ScheduleComponent implements OnInit {
 
     slotDuration: '00:30:00',
 
+    slotLabelFormat: { hour: 'numeric', minute: '2-digit', meridiem: 'short' },
+
+    eventTimeFormat: { hour: 'numeric', minute: '2-digit', meridiem: 'short' },
+
     allDaySlot: false,
 
     height: 'auto',
@@ -353,6 +390,8 @@ export class ScheduleComponent implements OnInit {
     eventConstraint: 'businessHours',
 
     events: [],
+
+    eventContent: (info) => this.renderEventContent(info),
 
     eventClick: (info) => this.onEventClick(info),
 
@@ -540,7 +579,7 @@ export class ScheduleComponent implements OnInit {
 
         const events = this.shifts.map((s) => this.shiftToEvent(s));
 
-        this.buildLegend();
+        this.buildEmployeeHours();
 
         this.syncCalendarEvents(events);
 
@@ -594,17 +633,14 @@ export class ScheduleComponent implements OnInit {
 
       : employeeDisplayName(emp, shift.userId);
 
-    const empId = shift.isOpenShift
-      ? null
-      : (typeof shift.employeeId === 'object' ? shift.employeeId?._id : shift.employeeId);
-
-    const bg = shift.isOpenShift ? '#f59e0b' : employeeColor(empId);
+    const bg = shift.isOpenShift ? '#fff7e6' : '#e8f1fb';
+    const border = shift.isOpenShift ? '#d99a2b' : '#5b8fc9';
 
     return {
 
       id: shift._id,
 
-      title: `${empName} (${shift.startTime}–${shift.endTime})`,
+      title: empName,
 
       start: `${shift.date.split('T')[0]}T${shift.startTime}`,
 
@@ -612,9 +648,9 @@ export class ScheduleComponent implements OnInit {
 
       backgroundColor: bg,
 
-      borderColor: bg,
+      borderColor: border,
 
-      textColor: isLightColor(bg) ? '#1a1a1a' : '#ffffff',
+      textColor: '#163a5f',
 
       extendedProps: { shift },
 
@@ -624,33 +660,73 @@ export class ScheduleComponent implements OnInit {
 
 
 
-  private buildLegend(): void {
+  private renderEventContent(info: EventContentArg): { domNodes: Node[] } {
+    const shift = info.event.extendedProps['shift'] as Shift;
+    const employee = typeof shift.employeeId === 'object' ? shift.employeeId : null;
+    const name = shift.isOpenShift ? 'Open' : employeeDisplayName(employee, shift.userId);
+    const initials = shift.isOpenShift
+      ? 'OS'
+      : name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase();
 
-    const seen = new Map<string, { id: string; name: string; color: string }>();
+    const wrapper = document.createElement('div');
+    wrapper.className = 'compact-shift';
+    const indicator = document.createElement('span');
+    indicator.className = 'employee-indicator';
+    indicator.textContent = initials || '?';
+    const details = document.createElement('span');
+    details.className = 'shift-details';
+    const employeeName = document.createElement('div');
+    employeeName.className = 'shift-employee';
+    employeeName.textContent = name;
+    const time = document.createElement('div');
+    time.className = 'shift-time';
+    time.textContent = `${format12Hour(shift.startTime)}–${format12Hour(shift.endTime)}`;
+    details.append(employeeName, time);
+    wrapper.append(indicator, details);
+    return { domNodes: [wrapper] };
+  }
+
+
+
+  private buildEmployeeHours(): void {
+
+    const totals = new Map<string, { id: string; name: string; shiftCount: number; hours: number }>();
 
     for (const shift of this.shifts) {
 
       if (shift.isOpenShift) continue;
 
-      const emp = typeof shift.employeeId === 'object' ? shift.employeeId : null;
-
+      const employee = typeof shift.employeeId === 'object' ? shift.employeeId : null;
       const id = typeof shift.employeeId === 'object' ? shift.employeeId?._id : shift.employeeId;
-
-      if (!id || seen.has(id)) continue;
-
-      seen.set(id, {
-
+      if (!id) continue;
+      const current = totals.get(id) || {
         id,
-
-        name: employeeDisplayName(emp, shift.userId),
-
-        color: employeeColor(id),
-
-      });
+        name: employeeDisplayName(employee, shift.userId),
+        shiftCount: 0,
+        hours: 0,
+      };
+      current.shiftCount += 1;
+      current.hours += shift.totalHours ?? this.calculateShiftHours(shift);
+      totals.set(id, current);
 
     }
 
-    this.legend = [...seen.values()].sort((a, b) => a.name.localeCompare(b.name));
+    this.weeklyEmployeeHours = [...totals.values()]
+      .map((employee) => ({ ...employee, hours: Math.round(employee.hours * 100) / 100 }))
+      .sort((a, b) => b.hours - a.hours || a.name.localeCompare(b.name));
+
+  }
+
+
+
+  private calculateShiftHours(shift: Shift): number {
+
+    const toMinutes = (time: string) => {
+      const [hours, minutes] = time.split(':').map(Number);
+      return hours * 60 + minutes;
+    };
+    const minutes = toMinutes(shift.endTime) - toMinutes(shift.startTime) - (shift.breakLength || 0);
+    return Math.max(0, minutes / 60);
 
   }
 
@@ -719,7 +795,7 @@ export class ScheduleComponent implements OnInit {
 
     const anchor = this.calendarComponent?.getApi()?.getDate() || new Date();
 
-    this.openShiftDialog(formatLocalDate(anchor), '09:00', '17:00');
+    this.openShiftDialog(formatLocalDate(anchor), '09:00', '17:00', true);
 
   }
 
@@ -745,6 +821,10 @@ export class ScheduleComponent implements OnInit {
 
         shift,
 
+        operatingHours: this.selectedLocation?.operatingHours,
+
+        existingShifts: this.shifts,
+
       },
 
     }).afterClosed().subscribe((saved) => { if (saved) this.reloadSchedule(); });
@@ -763,13 +843,26 @@ export class ScheduleComponent implements OnInit {
 
 
 
-  private openShiftDialog(date: string, startTime: string, endTime: string): void {
+  private openShiftDialog(
+    date: string,
+    startTime: string,
+    endTime: string,
+    useNextAvailable = false
+  ): void {
 
     this.dialog.open(ShiftDialogComponent, {
 
       width: '420px',
 
-      data: { locationId: this.selectedLocationId, date, startTime, endTime },
+      data: {
+        locationId: this.selectedLocationId,
+        date,
+        startTime,
+        endTime,
+        operatingHours: this.selectedLocation?.operatingHours,
+        existingShifts: this.shifts,
+        useNextAvailable,
+      },
 
     }).afterClosed().subscribe((saved) => { if (saved) this.reloadSchedule(); });
 
@@ -817,15 +910,170 @@ export class ScheduleComponent implements OnInit {
 
   copyPreviousWeek(): void {
 
-    if (!this.currentScheduleId) return;
+    if (!this.selectedLocationId || !this.weekStart) return;
 
-    const nextWeek = new Date();
+    const overwrite = this.shifts.length > 0;
+    const message = overwrite
+      ? 'Replace all shifts in the displayed week with last week’s schedule?'
+      : 'Copy last week’s shifts into the displayed week?';
+    if (!confirm(message)) return;
 
-    nextWeek.setDate(nextWeek.getDate() + 7);
+    this.scheduleService.copyPreviousWeek(this.selectedLocationId, this.weekStart, overwrite)
+      .subscribe({
+        next: (res) => {
+          alert(`${res.data.shiftsCopied} shifts copied from last week.`);
+          this.reloadSchedule();
+        },
+        error: (err) => alert(err.error?.message || 'Failed to copy last week’s schedule'),
+      });
 
-    this.scheduleService.copyPreviousWeek(this.currentScheduleId, nextWeek.toISOString())
+  }
 
-      .subscribe(() => this.reloadSchedule());
+
+
+  exportExcel(): void {
+
+    if (!this.shifts.length) return;
+
+    const escapeXml = (value: string | number) => String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+
+    const weekStart = new Date(`${this.weekStart.split('T')[0]}T12:00:00`);
+    const days = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(weekStart);
+      date.setDate(weekStart.getDate() + index);
+      const key = formatLocalDate(date);
+      const shifts = this.shifts
+        .filter((shift) => shift.date.split('T')[0] === key)
+        .sort((a, b) => a.startTime.localeCompare(b.startTime));
+      return { date, shifts };
+    });
+    const maxShifts = Math.max(1, ...days.map((day) => day.shifts.length));
+    const title = `${this.selectedLocation?.name || 'Schedule'} — ${weekStart.toLocaleDateString()} to ${days[6].date.toLocaleDateString()}`;
+
+    const scheduleRows = Array.from({ length: maxShifts }, (_, rowIndex) =>
+      `<Row ss:Height="52">${days.map((day) => {
+        const shift = day.shifts[rowIndex];
+        if (!shift) return '<Cell ss:StyleID="Empty"><Data ss:Type="String"></Data></Cell>';
+        const employee = typeof shift.employeeId === 'object' ? shift.employeeId : null;
+        const name = shift.isOpenShift ? 'Open Shift' : employeeDisplayName(employee, shift.userId);
+        const hours = shift.totalHours ?? this.calculateShiftHours(shift);
+        const text = `${name}\n${format12Hour(shift.startTime)} – ${format12Hour(shift.endTime)}\n${hours} hours`;
+        return `<Cell ss:StyleID="Shift"><Data ss:Type="String">${escapeXml(text)}</Data></Cell>`;
+      }).join('')}</Row>`
+    ).join('');
+
+    const scheduleSheet = `
+      <Worksheet ss:Name="Weekly Schedule">
+        <Table>
+          ${days.map(() => '<Column ss:Width="112"/>').join('')}
+          <Row ss:Height="28">
+            <Cell ss:StyleID="Title" ss:MergeAcross="6"><Data ss:Type="String">${escapeXml(title)}</Data></Cell>
+          </Row>
+          <Row ss:Height="32">
+            ${days.map((day) => `<Cell ss:StyleID="Header"><Data ss:Type="String">${
+              escapeXml(day.date.toLocaleDateString(undefined, {
+                weekday: 'long', month: 'short', day: 'numeric',
+              }))
+            }</Data></Cell>`).join('')}
+          </Row>
+          ${scheduleRows}
+        </Table>
+        <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+          <FreezePanes/><FrozenNoSplit/><SplitHorizontal>2</SplitHorizontal><TopRowBottomPane>2</TopRowBottomPane>
+          <PageSetup><Layout x:Orientation="Landscape"/></PageSetup>
+          <FitToPage/>
+        </WorksheetOptions>
+      </Worksheet>`;
+
+    const hoursRows = this.weeklyEmployeeHours.map((employee) => `
+      <Row>
+        <Cell ss:StyleID="Body"><Data ss:Type="String">${escapeXml(employee.name)}</Data></Cell>
+        <Cell ss:StyleID="BodyCenter"><Data ss:Type="Number">${employee.shiftCount}</Data></Cell>
+        <Cell ss:StyleID="Hours"><Data ss:Type="Number">${employee.hours}</Data></Cell>
+      </Row>`).join('');
+    const hoursSheet = `
+      <Worksheet ss:Name="Employee Hours">
+        <Table>
+          <Column ss:Width="180"/><Column ss:Width="70"/><Column ss:Width="70"/>
+          <Row ss:Height="28">
+            <Cell ss:StyleID="Title" ss:MergeAcross="2"><Data ss:Type="String">Employee Hours — Most to Least</Data></Cell>
+          </Row>
+          <Row>
+            <Cell ss:StyleID="Header"><Data ss:Type="String">Employee</Data></Cell>
+            <Cell ss:StyleID="Header"><Data ss:Type="String">Shifts</Data></Cell>
+            <Cell ss:StyleID="Header"><Data ss:Type="String">Hours</Data></Cell>
+          </Row>
+          ${hoursRows}
+        </Table>
+        <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+          <FreezePanes/><FrozenNoSplit/><SplitHorizontal>2</SplitHorizontal><TopRowBottomPane>2</TopRowBottomPane>
+        </WorksheetOptions>
+      </Worksheet>`;
+
+    const workbook = `<?xml version="1.0"?>
+      <?mso-application progid="Excel.Sheet"?>
+      <Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+        xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
+        xmlns:x="urn:schemas-microsoft-com:office:excel">
+        <Styles>
+          <Style ss:ID="Default" ss:Name="Normal">
+            <Alignment ss:Vertical="Center"/><Font ss:FontName="Calibri" ss:Size="10"/>
+          </Style>
+          <Style ss:ID="Title">
+            <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+            <Font ss:FontName="Calibri" ss:Size="14" ss:Bold="1" ss:Color="#174A75"/>
+            <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#5B8FC9"/></Borders>
+          </Style>
+          <Style ss:ID="Header">
+            <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+            <Font ss:FontName="Calibri" ss:Size="10" ss:Bold="1" ss:Color="#174A75"/>
+            <Interior ss:Color="#EAF2F9" ss:Pattern="Solid"/>
+            <Borders>
+              <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#AAB8C5"/>
+              <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#AAB8C5"/>
+              <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#AAB8C5"/>
+              <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#AAB8C5"/>
+            </Borders>
+          </Style>
+          <Style ss:ID="Shift">
+            <Alignment ss:Vertical="Top" ss:WrapText="1"/>
+            <Font ss:FontName="Calibri" ss:Size="9" ss:Color="#243B53"/>
+            <Interior ss:Color="#F8FBFE" ss:Pattern="Solid"/>
+            <Borders>
+              <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C5D0DA"/>
+              <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#5B8FC9"/>
+              <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C5D0DA"/>
+              <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#C5D0DA"/>
+            </Borders>
+          </Style>
+          <Style ss:ID="Empty">
+            <Borders>
+              <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D8E0E7"/>
+              <Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D8E0E7"/>
+              <Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D8E0E7"/>
+              <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D8E0E7"/>
+            </Borders>
+          </Style>
+          <Style ss:ID="Body"><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D8E0E7"/></Borders></Style>
+          <Style ss:ID="BodyCenter"><Alignment ss:Horizontal="Center"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D8E0E7"/></Borders></Style>
+          <Style ss:ID="Hours"><Alignment ss:Horizontal="Right"/><NumberFormat ss:Format="0.00"/><Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#D8E0E7"/></Borders></Style>
+        </Styles>
+        ${scheduleSheet}
+        ${hoursSheet}
+      </Workbook>`;
+
+    const location = (this.selectedLocation?.name || 'location').replace(/[^\w-]+/g, '-');
+    const blob = new Blob([workbook], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${location}-${this.weekStart.split('T')[0]}-schedule.xls`;
+    link.click();
+    URL.revokeObjectURL(url);
 
   }
 

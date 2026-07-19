@@ -84,10 +84,15 @@ export const formatHoursSummary = (hours?: Partial<OperatingHours>): string => {
   const openDays = DAYS.filter((d) => !h[d.key].closed);
   if (!openDays.length) return 'Closed all week';
   const first = h[openDays[0].key];
+  const displayTime = (time: string) => {
+    const [hour, minute] = time.split(':').map(Number);
+    return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour >= 12 ? 'PM' : 'AM'}`;
+  };
+  const range = `${displayTime(first.open)} – ${displayTime(first.close)}`;
   const allSame = openDays.every(
     (d) => h[d.key].open === first.open && h[d.key].close === first.close
   );
-  if (allSame && openDays.length === 7) return `${first.open} – ${first.close} daily`;
-  if (allSame) return `${first.open} – ${first.close}, ${openDays.length} days/week`;
+  if (allSame && openDays.length === 7) return `${range} daily`;
+  if (allSame) return `${range}, ${openDays.length} days/week`;
   return `${openDays.length} open days/week`;
 };

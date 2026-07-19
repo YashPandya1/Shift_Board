@@ -80,8 +80,12 @@ export class ScheduleService {
     return this.api.delete(`/schedules/shifts/${id}`);
   }
 
-  copyPreviousWeek(scheduleId: string, targetWeekStart: string): Observable<{ data: unknown }> {
-    return this.api.post('/schedules/copy-week', { scheduleId, targetWeekStart });
+  copyPreviousWeek(
+    locationId: string,
+    targetWeekStart: string,
+    overwrite = false
+  ): Observable<{ data: { shiftsCopied: number } }> {
+    return this.api.post('/schedules/copy-week', { locationId, targetWeekStart, overwrite });
   }
 
   publish(scheduleId: string): Observable<{ data: Schedule }> {
