@@ -84,7 +84,7 @@ export class ScheduleService {
     locationId: string,
     targetWeekStart: string,
     overwrite = false
-  ): Observable<{ data: { shiftsCopied: number } }> {
+  ): Observable<{ data: { schedule: Schedule; shifts: Shift[]; shiftsCopied: number } }> {
     return this.api.post('/schedules/copy-week', { locationId, targetWeekStart, overwrite });
   }
 

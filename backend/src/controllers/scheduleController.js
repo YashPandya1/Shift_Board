@@ -6,7 +6,6 @@ import {
   User,
   Location,
 } from '../models/index.js';
-import mongoose from 'mongoose';
 import { AppError } from '../middleware/errorHandler.js';
 import { getWeekBounds, calculateShiftHours, parseScheduleDate } from '../utils/helpers.js';
 import { validateShiftWithinHours } from '../utils/operatingHours.js';
@@ -290,72 +289,74 @@ export const copyPreviousWeek = async (req, res, next) => {
       throw new AppError('The displayed week already has shifts. Confirm replacement to continue.', 409);
     }
 
-    const session = await mongoose.startSession();
-    let targetSchedule;
-    let shiftsCopied = 0;
-    try {
-      await session.withTransaction(async () => {
-        targetSchedule = await Schedule.findOne({
-          organizationId: req.user.organizationId,
-          locationId,
-          weekStartDate: { $gte: targetStart, $lte: targetEnd },
-        }).session(session);
-        if (!targetSchedule) {
-          [targetSchedule] = await Schedule.create([{
-            organizationId: req.user.organizationId,
-            locationId,
-            weekStartDate: targetStart,
-            weekEndDate: targetEnd,
-            createdBy: req.user._id,
-          }], { session });
-        }
-
-        if (existingTargetShifts) {
-          await Shift.deleteMany({
-            organizationId: req.user.organizationId,
-            locationId,
-            date: { $gte: targetStart, $lte: targetEnd },
-          }).session(session);
-        }
-
-        const dayDiff = 7;
-        const newShifts = sourceShifts.map((s) => {
-          const copiedDate = new Date(s.date);
-          copiedDate.setDate(copiedDate.getDate() + dayDiff);
-          return {
-            scheduleId: targetSchedule._id,
-            organizationId: s.organizationId,
-            locationId: s.locationId,
-            employeeId: s.isOpenShift ? undefined : s.employeeId,
-            userId: s.isOpenShift ? undefined : s.userId,
-            date: copiedDate,
-            startTime: s.startTime,
-            endTime: s.endTime,
-            breakLength: s.breakLength,
-            notes: s.notes,
-            hourlyWage: s.hourlyWage,
-            totalHours: s.totalHours,
-            laborCost: s.laborCost,
-            isOpenShift: s.isOpenShift,
-            status: s.isOpenShift ? 'open' : 'scheduled',
-            createdBy: req.user._id,
-          };
-        });
-
-        await Shift.insertMany(newShifts, { session });
-        shiftsCopied = newShifts.length;
-        targetSchedule.isPublished = false;
-        targetSchedule.publishedAt = null;
-        targetSchedule.publishedBy = null;
-        await targetSchedule.save({ session });
+    let targetSchedule = await Schedule.findOne({
+      organizationId: req.user.organizationId,
+      locationId,
+      weekStartDate: { $gte: targetStart, $lte: targetEnd },
+    });
+    if (!targetSchedule) {
+      targetSchedule = await Schedule.create({
+        organizationId: req.user.organizationId,
+        locationId,
+        weekStartDate: targetStart,
+        weekEndDate: targetEnd,
+        createdBy: req.user._id,
       });
-    } finally {
-      await session.endSession();
     }
+
+    const newShiftData = sourceShifts.map((s) => {
+      const copiedDate = new Date(s.date);
+      copiedDate.setDate(copiedDate.getDate() + 7);
+      return {
+        scheduleId: targetSchedule._id,
+        organizationId: s.organizationId,
+        locationId: s.locationId,
+        employeeId: s.isOpenShift ? undefined : s.employeeId,
+        userId: s.isOpenShift ? undefined : s.userId,
+        date: copiedDate,
+        startTime: s.startTime,
+        endTime: s.endTime,
+        breakLength: s.breakLength,
+        notes: s.notes,
+        hourlyWage: s.hourlyWage,
+        totalHours: s.totalHours,
+        laborCost: s.laborCost,
+        isOpenShift: s.isOpenShift,
+        status: s.isOpenShift ? 'open' : 'scheduled',
+        createdBy: req.user._id,
+      };
+    });
+
+    const insertedShifts = await Shift.insertMany(newShiftData);
+    if (existingTargetShifts) {
+      await Shift.deleteMany({
+        organizationId: req.user.organizationId,
+        locationId,
+        date: { $gte: targetStart, $lte: targetEnd },
+        _id: { $nin: insertedShifts.map((shift) => shift._id) },
+      });
+    }
+
+    targetSchedule.isPublished = false;
+    targetSchedule.publishedAt = null;
+    targetSchedule.publishedBy = null;
+    await targetSchedule.save();
+
+    const copiedShifts = await Shift.find({
+      _id: { $in: insertedShifts.map((shift) => shift._id) },
+    })
+      .populate('userId', 'firstName lastName')
+      .populate('employeeId', 'firstName lastName position hourlyWage phone')
+      .populate('locationId', 'name operatingHours')
+      .sort({ date: 1, startTime: 1 });
 
     res.status(201).json({
       success: true,
-      data: { schedule: targetSchedule, shiftsCopied },
+      data: {
+        schedule: targetSchedule,
+        shifts: copiedShifts,
+        shiftsCopied: copiedShifts.length,
+      },
     });
   } catch (error) {
     next(error);

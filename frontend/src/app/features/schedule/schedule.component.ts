@@ -115,6 +115,14 @@ function format12Hour(time: string): string {
 
           </button>
 
+          <button mat-stroked-button color="primary" (click)="copyPreviousWeek()"
+                  [disabled]="!selectedLocationId || !weekStart || copyingPreviousWeek">
+
+            <mat-icon>content_copy</mat-icon>
+            {{ copyingPreviousWeek ? 'Copying…' : 'Copy Previous Week' }}
+
+          </button>
+
           <button mat-flat-button color="primary" (click)="publishSchedule()" [disabled]="!currentScheduleId">
 
             <mat-icon>publish</mat-icon> Publish
@@ -128,12 +136,6 @@ function format12Hour(time: string): string {
           </button>
 
           <mat-menu #moreMenu="matMenu">
-
-            <button mat-menu-item (click)="copyPreviousWeek()" [disabled]="!selectedLocationId || !weekStart">
-
-              <mat-icon>content_copy</mat-icon> Copy Previous Week
-
-            </button>
 
             <button mat-menu-item (click)="exportExcel()" [disabled]="!shifts.length">
 
@@ -342,6 +344,8 @@ export class ScheduleComponent implements OnInit {
   hoursSummary = '';
 
   weeklyEmployeeHours: { id: string; name: string; shiftCount: number; hours: number }[] = [];
+
+  copyingPreviousWeek = false;
 
   scheduleStartDay = 'monday';
 
@@ -605,6 +609,11 @@ export class ScheduleComponent implements OnInit {
 
   private syncCalendarEvents(events: EventInput[]): void {
 
+    const api = this.calendarComponent?.getApi();
+    if (api) {
+      api.removeAllEvents();
+      events.forEach((event) => api.addEvent(event));
+    }
     this.calendarOptions = { ...this.calendarOptions, events };
 
   }
@@ -918,13 +927,21 @@ export class ScheduleComponent implements OnInit {
       : 'Copy last week’s shifts into the displayed week?';
     if (!confirm(message)) return;
 
+    this.copyingPreviousWeek = true;
     this.scheduleService.copyPreviousWeek(this.selectedLocationId, this.weekStart, overwrite)
       .subscribe({
         next: (res) => {
-          alert(`${res.data.shiftsCopied} shifts copied from last week.`);
-          this.reloadSchedule();
+          this.shifts = res.data.shifts;
+          this.currentScheduleId = res.data.schedule._id;
+          this.buildEmployeeHours();
+          this.syncCalendarEvents(this.shifts.map((shift) => this.shiftToEvent(shift)));
+          this.copyingPreviousWeek = false;
+          this.cdr.markForCheck();
         },
-        error: (err) => alert(err.error?.message || 'Failed to copy last week’s schedule'),
+        error: (err) => {
+          this.copyingPreviousWeek = false;
+          alert(err.error?.message || 'Failed to copy last week’s schedule');
+        },
       });
 
   }
