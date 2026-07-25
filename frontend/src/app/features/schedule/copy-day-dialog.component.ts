@@ -4,6 +4,7 @@ import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/materia
 import { MatButtonModule } from '@angular/material/button';
 import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 
 export interface CopyDayOption {
@@ -13,7 +14,8 @@ export interface CopyDayOption {
 }
 
 export interface CopyDayDialogData {
-  days: CopyDayOption[];
+  currentWeekDays: CopyDayOption[];
+  previousWeekDays: CopyDayOption[];
 }
 
 export interface CopyDayDialogResult {
@@ -31,27 +33,48 @@ export interface CopyDayDialogResult {
     MatButtonModule,
     MatCheckboxModule,
     MatFormFieldModule,
+    MatInputModule,
     MatSelectModule,
   ],
   template: `
     <h2 mat-dialog-title>Copy a day</h2>
     <mat-dialog-content>
-      <p class="description">Choose one scheduled day, then select every day that should use the same shifts.</p>
+      <p class="description">
+        Copy shifts from any previous date into one or more days on the currently displayed week.
+      </p>
 
       <mat-form-field appearance="outline" class="full-width">
         <mat-label>Copy shifts from</mat-label>
         <mat-select [(ngModel)]="sourceDate" (selectionChange)="sourceChanged()">
-          @for (day of data.days; track day.date) {
-            <mat-option [value]="day.date" [disabled]="day.shiftCount === 0">
-              {{ day.label }} ({{ day.shiftCount }} shift{{ day.shiftCount === 1 ? '' : 's' }})
-            </mat-option>
+          @if (data.previousWeekDays.length) {
+            <mat-optgroup label="Previous week">
+              @for (day of data.previousWeekDays; track day.date) {
+                <mat-option [value]="day.date" [disabled]="day.shiftCount === 0">
+                  {{ day.label }} ({{ day.shiftCount }} shift{{ day.shiftCount === 1 ? '' : 's' }})
+                </mat-option>
+              }
+            </mat-optgroup>
+          }
+          @if (data.currentWeekDays.length) {
+            <mat-optgroup label="Current week">
+              @for (day of data.currentWeekDays; track day.date) {
+                <mat-option [value]="day.date" [disabled]="day.shiftCount === 0">
+                  {{ day.label }} ({{ day.shiftCount }} shift{{ day.shiftCount === 1 ? '' : 's' }})
+                </mat-option>
+              }
+            </mat-optgroup>
           }
         </mat-select>
       </mat-form-field>
 
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Or enter a source date</mat-label>
+        <input matInput type="date" [(ngModel)]="sourceDate" (ngModelChange)="sourceChanged()">
+      </mat-form-field>
+
       <div class="target-list">
-        <span class="target-label">Copy to</span>
-        @for (day of data.days; track day.date) {
+        <span class="target-label">Copy to current week</span>
+        @for (day of data.currentWeekDays; track day.date) {
           @if (day.date !== sourceDate) {
             <mat-checkbox
               [checked]="targetDates.has(day.date)"
@@ -89,7 +112,10 @@ export class CopyDayDialogComponent {
   private dialogRef = inject(MatDialogRef<CopyDayDialogComponent>);
   data = inject<CopyDayDialogData>(MAT_DIALOG_DATA);
 
-  sourceDate = this.data.days.find((day) => day.shiftCount > 0)?.date || '';
+  sourceDate =
+    this.data.previousWeekDays.find((day) => day.shiftCount > 0)?.date
+    || this.data.currentWeekDays.find((day) => day.shiftCount > 0)?.date
+    || '';
   targetDates = new Set<string>();
   overwrite = false;
 

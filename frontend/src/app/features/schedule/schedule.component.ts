@@ -210,7 +210,7 @@ interface WeekScheduleData {
             </button>
 
             <button mat-stroked-button (click)="openCopyDay()"
-                    [disabled]="!shifts.length || copyingDay">
+                    [disabled]="!selectedLocationId || !weekStart || copyingDay">
               <mat-icon>content_copy</mat-icon>
               {{ copyingDay ? 'Copying…' : 'Copy Day' }}
             </button>
@@ -1267,10 +1267,78 @@ export class ScheduleComponent implements OnInit {
   openCopyDay(): void {
 
     if (!this.weekStart || !this.selectedLocationId) return;
-    const start = new Date(`${this.weekStart.split('T')[0]}T12:00:00`);
-    const days = Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(start);
-      date.setDate(start.getDate() + index);
+
+    const currentStart = new Date(`${this.weekStart.split('T')[0]}T12:00:00`);
+    const previousStart = new Date(currentStart);
+    previousStart.setDate(currentStart.getDate() - 7);
+    const previousKey = this.weekKeyForDate(previousStart);
+    const cachedPrevious = this.weekCache.get(previousKey);
+
+    const openDialog = (previousShifts: Shift[]) => {
+      const currentWeekDays = this.buildCopyDayOptions(currentStart, this.shifts);
+      const previousWeekDays = this.buildCopyDayOptions(previousStart, previousShifts);
+      this.dialog.open(CopyDayDialogComponent, {
+        width: '460px',
+        data: { currentWeekDays, previousWeekDays },
+      }).afterClosed().subscribe((result?: CopyDayDialogResult) => {
+        if (!result) return;
+        this.copyingDay = true;
+        this.scheduleService.copyDay(
+          this.selectedLocationId,
+          result.sourceDate,
+          result.targetDates,
+          result.overwrite
+        ).subscribe({
+          next: (res) => {
+            const targetDates = new Set(res.data.targetDates.map((date) => date.split('T')[0]));
+            this.shifts = [
+              ...this.shifts.filter((shift) => !targetDates.has(shift.date.split('T')[0])),
+              ...res.data.shifts,
+            ].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+            this.currentScheduleId = res.data.schedule._id;
+            this.buildEmployeeHours();
+            this.updateCurrentWeekCache();
+            this.rebuildCalendar();
+            this.copyingDay = false;
+            this.cdr.markForCheck();
+          },
+          error: (err) => {
+            this.copyingDay = false;
+            alert(err.error?.message || 'Failed to copy the day’s schedule');
+          },
+        });
+      });
+    };
+
+    if (cachedPrevious) {
+      openDialog(cachedPrevious.shifts);
+      return;
+    }
+
+    this.scheduleService.getWeek({
+      locationId: this.selectedLocationId,
+      date: previousStart.toISOString(),
+    }).subscribe({
+      next: (res) => {
+        this.weekCache.set(previousKey, res.data);
+        openDialog(res.data.shifts);
+      },
+      error: () => openDialog([]),
+    });
+
+  }
+
+
+
+  private buildCopyDayOptions(weekStart: Date, shifts: Shift[]): {
+    date: string;
+    label: string;
+    shiftCount: number;
+  }[] {
+
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(weekStart);
+      date.setDate(weekStart.getDate() + index);
       const dateKey = formatLocalDate(date);
       return {
         date: dateKey,
@@ -1279,40 +1347,8 @@ export class ScheduleComponent implements OnInit {
           month: 'short',
           day: 'numeric',
         }),
-        shiftCount: this.shifts.filter((shift) => shift.date.split('T')[0] === dateKey).length,
+        shiftCount: shifts.filter((shift) => shift.date.split('T')[0] === dateKey).length,
       };
-    });
-
-    this.dialog.open(CopyDayDialogComponent, {
-      width: '460px',
-      data: { days },
-    }).afterClosed().subscribe((result?: CopyDayDialogResult) => {
-      if (!result) return;
-      this.copyingDay = true;
-      this.scheduleService.copyDay(
-        this.selectedLocationId,
-        result.sourceDate,
-        result.targetDates,
-        result.overwrite
-      ).subscribe({
-        next: (res) => {
-          const targetDates = new Set(res.data.targetDates.map((date) => date.split('T')[0]));
-          this.shifts = [
-            ...this.shifts.filter((shift) => !targetDates.has(shift.date.split('T')[0])),
-            ...res.data.shifts,
-          ].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
-          this.currentScheduleId = res.data.schedule._id;
-          this.buildEmployeeHours();
-          this.updateCurrentWeekCache();
-          this.rebuildCalendar();
-          this.copyingDay = false;
-          this.cdr.markForCheck();
-        },
-        error: (err) => {
-          this.copyingDay = false;
-          alert(err.error?.message || 'Failed to copy the day’s schedule');
-        },
-      });
     });
 
   }

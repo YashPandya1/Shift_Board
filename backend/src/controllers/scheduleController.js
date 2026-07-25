@@ -405,12 +405,20 @@ export const copyScheduleDay = async (req, res, next) => {
 
     const org = await Organization.findById(req.user.organizationId);
     const source = parseScheduleDate(sourceDate);
-    const { weekStart, weekEnd } = getWeekBounds(source, org.scheduleStartDay);
-    const targets = [...new Set(targetDates)]
-      .map((date) => parseScheduleDate(date))
-      .filter((date) => date >= weekStart && date <= weekEnd && date.toDateString() !== source.toDateString());
+    const uniqueTargets = [...new Set(targetDates)].map((date) => parseScheduleDate(date));
+    if (!uniqueTargets.length) {
+      throw new AppError('Select at least one target day', 400);
+    }
+
+    const { weekStart, weekEnd } = getWeekBounds(uniqueTargets[0], org.scheduleStartDay);
+    const targets = uniqueTargets.filter(
+      (date) => date >= weekStart && date <= weekEnd && date.toDateString() !== source.toDateString()
+    );
     if (!targets.length) {
-      throw new AppError('Select at least one other day in the same week', 400);
+      throw new AppError('Select at least one target day in the destination week', 400);
+    }
+    if (targets.length !== uniqueTargets.length) {
+      throw new AppError('All target days must be in the same week', 400);
     }
 
     const sourceStart = new Date(source);
