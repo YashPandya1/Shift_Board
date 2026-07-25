@@ -73,17 +73,15 @@ const drawHeader = (doc, options, weekStart, weekEnd, totalHours) => {
   const pageWidth = doc.page.width;
   doc.save();
   doc.fillColor(THEME.primaryDark).font('Helvetica-Bold').fontSize(20);
-  doc.text(options.organizationName || 'ShiftBoard', 40, 24, { width: pageWidth - 80, align: 'left' });
-  doc.fillColor(THEME.text).font('Helvetica').fontSize(10);
-  doc.text(options.locationName || 'Schedule', 40, 49);
+  doc.text(options.locationName || 'Schedule', 40, 28, { width: pageWidth - 80, align: 'left' });
   const weekLabel = `Week of ${formatDate(new Date(weekStart))} – ${formatDate(new Date(weekEnd))}`;
   doc.font('Helvetica-Bold').fontSize(12);
-  doc.text(weekLabel, 40, 32, { width: pageWidth - 80, align: 'right' });
+  doc.text(weekLabel, 40, 28, { width: pageWidth - 80, align: 'right' });
   doc.fillColor(THEME.muted).font('Helvetica').fontSize(9);
-  doc.text(`Total scheduled: ${totalHours}h`, 40, 50, { width: pageWidth - 80, align: 'right' });
-  doc.moveTo(40, 70).lineTo(pageWidth - 40, 70).lineWidth(1.5).strokeColor(THEME.primary).stroke();
+  doc.text(`Total scheduled: ${totalHours}h`, 40, 48, { width: pageWidth - 80, align: 'right' });
+  doc.moveTo(40, 66).lineTo(pageWidth - 40, 66).lineWidth(1.5).strokeColor(THEME.primary).stroke();
   doc.restore();
-  doc.y = 82;
+  doc.y = 78;
 };
 
 const drawScheduleGrid = (doc, days, shiftsByDay) => {

@@ -128,6 +128,8 @@ export interface DashboardStats {
   pendingTimeOffRequests: number;
   laborCostThisWeek: number;
   hoursScheduled: number;
+  employeeHoursScheduled: number;
+  ownerHoursScheduled: number;
   overtimeHours: number;
   estimatedPayroll: number;
   weekStart: string;

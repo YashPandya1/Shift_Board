@@ -53,9 +53,14 @@ import { DashboardStats, isHourlyWageEnabled } from '../../core/models';
             <mat-icon class="stat-icon">work_outline</mat-icon>
           </div>
           <div class="sb-stat-card">
-            <span class="stat-label">Hours Scheduled</span>
-            <span class="stat-value">{{ stats.hoursScheduled }}h</span>
-            <mat-icon class="stat-icon">schedule</mat-icon>
+            <span class="stat-label">Employee Hours</span>
+            <span class="stat-value">{{ stats.employeeHoursScheduled }}h</span>
+            <mat-icon class="stat-icon">badge</mat-icon>
+          </div>
+          <div class="sb-stat-card">
+            <span class="stat-label">Owner Hours</span>
+            <span class="stat-value">{{ stats.ownerHoursScheduled }}h</span>
+            <mat-icon class="stat-icon">storefront</mat-icon>
           </div>
           @if (hourlyWageEnabled) {
             <div class="sb-stat-card">

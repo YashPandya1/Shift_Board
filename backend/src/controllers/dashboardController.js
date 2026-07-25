@@ -45,10 +45,18 @@ export const getDashboard = async (req, res, next) => {
         organizationId: orgId,
         date: { $gte: weekStart, $lte: weekEnd },
         status: { $ne: SHIFT_STATUS.CANCELLED },
-      }).populate('employeeId', 'hourlyWage'),
+      })
+        .populate({
+          path: 'employeeId',
+          select: 'hourlyWage userId',
+          populate: { path: 'userId', select: 'role' },
+        })
+        .populate('userId', 'role'),
     ]);
 
     let totalHours = 0;
+    let ownerHours = 0;
+    let employeeHoursTotal = 0;
     let laborCost = 0;
     const overtimeThreshold = org?.overtimeThreshold || 40;
     const otMultiplier = org?.laborCostSettings?.overtimeMultiplier || 1.5;
@@ -59,6 +67,10 @@ export const getDashboard = async (req, res, next) => {
       totalHours += hours;
       const wage = shift.hourlyWage || shift.employeeId?.hourlyWage || 0;
       laborCost += hours * wage;
+
+      const role = shift.userId?.role || shift.employeeId?.userId?.role;
+      if (role === 'owner') ownerHours += hours;
+      else employeeHoursTotal += hours;
 
       if (shift.employeeId) {
         const empId = shift.employeeId._id.toString();
@@ -81,6 +93,8 @@ export const getDashboard = async (req, res, next) => {
         pendingTimeOffRequests: pendingTimeOff,
         laborCostThisWeek: Math.round(laborCost * 100) / 100,
         hoursScheduled: Math.round(totalHours * 10) / 10,
+        employeeHoursScheduled: Math.round(employeeHoursTotal * 10) / 10,
+        ownerHoursScheduled: Math.round(ownerHours * 10) / 10,
         overtimeHours: Math.round(overtimeHours * 10) / 10,
         estimatedPayroll: Math.round((laborCost + overtimeHours * (weekShifts[0]?.hourlyWage || 15) * (otMultiplier - 1)) * 100) / 100,
         weekStart,
