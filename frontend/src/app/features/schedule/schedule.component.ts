@@ -1,4 +1,5 @@
-import { Component, inject, OnInit, ViewChild, ChangeDetectorRef } from '@angular/core';
+import { Component, inject, OnInit, ViewChild, ChangeDetectorRef, DestroyRef } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { DecimalPipe } from '@angular/common';
 
 import { RouterLink } from '@angular/router';
@@ -14,6 +15,8 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatMenuModule } from '@angular/material/menu';
 
 import { MatDialog } from '@angular/material/dialog';
+
+import { BreakpointObserver } from '@angular/cdk/layout';
 
 import { FullCalendarModule, FullCalendarComponent } from '@fullcalendar/angular';
 
@@ -221,9 +224,48 @@ interface WeekScheduleData {
 
 
 
-        <div class="sb-card calendar-container">
+        <div class="sb-card calendar-container"
+             [class.mobile-week-mode]="isMobile && currentView === 'timeGridWeek'">
 
-          @if (calendarVisible) {
+          @if (isMobile && currentView === 'timeGridWeek') {
+            <div class="mobile-week-nav">
+              <button mat-icon-button type="button" class="mobile-nav-btn"
+                      (click)="navigateMobileWeek(-7)" aria-label="Previous week">
+                <mat-icon>chevron_left</mat-icon>
+              </button>
+              <span class="mobile-week-title">{{ mobileWeekTitle }}</span>
+              <button mat-icon-button type="button" class="mobile-nav-btn"
+                      (click)="navigateMobileWeek(7)" aria-label="Next week">
+                <mat-icon>chevron_right</mat-icon>
+              </button>
+              <button mat-button type="button" class="mobile-today-btn"
+                      (click)="goMobileWeekToday()">Today</button>
+            </div>
+            <div class="mobile-week-list">
+              @for (day of mobileWeekDays; track day.date) {
+                <section class="mobile-day-band">
+                  <header class="mobile-day-header">{{ day.label }}</header>
+                  @if (!day.shifts.length) {
+                    <p class="mobile-day-empty">No shifts</p>
+                  } @else {
+                    @for (shift of day.shifts; track shift._id) {
+                      @let colors = shiftColors(shift);
+                      <button type="button" class="mobile-shift-card"
+                              [style.border-left-color]="colors.border"
+                              [style.background]="colors.background"
+                              (click)="openShiftEditor(shift)">
+                        <span class="mobile-shift-name">{{ mobileShiftName(shift) }}</span>
+                        <span class="mobile-shift-meta">
+                          <span>{{ format12HourPublic(shift.startTime) }}–{{ format12HourPublic(shift.endTime) }}</span>
+                          <span>{{ formatShiftHours(shift) }}h</span>
+                        </span>
+                      </button>
+                    }
+                  }
+                </section>
+              }
+            </div>
+          } @else if (calendarVisible) {
             <full-calendar #calendar [options]="calendarOptions" />
           }
 
@@ -345,8 +387,75 @@ interface WeekScheduleData {
 
     }
 
+    .mobile-week-nav {
+      display: none;
+    }
+    .mobile-week-list { display: none; }
+
+    @media (max-width: 768px) {
+      .view-toggle button {
+        min-height: 44px;
+        min-width: 44px;
+        padding: 0 12px;
+      }
+      .copy-actions button {
+        min-height: 44px;
+      }
+      .calendar-container.mobile-week-mode { padding: 0; }
+      .mobile-week-nav {
+        display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+        padding: 8px 12px; border-bottom: 1px solid #d8e3ef;
+      }
+      .mobile-nav-btn {
+        width: 44px; height: 44px; padding: 0;
+      }
+      .mobile-week-title {
+        flex: 1; text-align: center; font-weight: 600; color: #24496d; font-size: 0.95rem;
+      }
+      .mobile-today-btn { min-height: 44px; }
+      .mobile-week-list {
+        display: flex; flex-direction: column; gap: 0;
+      }
+      .mobile-day-band {
+        border-bottom: 1px solid #e4eaf0; padding: 12px 14px 14px;
+      }
+      .mobile-day-band:last-child { border-bottom: none; }
+      .mobile-day-header {
+        margin: 0 0 10px; font-size: 0.9rem; font-weight: 700; color: #24496d;
+      }
+      .mobile-day-empty {
+        margin: 0; font-size: 0.85rem; color: var(--sb-text-secondary);
+      }
+      .mobile-shift-card {
+        display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+        width: 100%; min-height: 44px; margin: 0 0 8px; padding: 10px 12px;
+        border: 1px solid #d0dce8; border-left-width: 4px; border-radius: 6px;
+        text-align: left; cursor: pointer; font: inherit; color: #163a5f;
+      }
+      .mobile-shift-card:last-child { margin-bottom: 0; }
+      .mobile-shift-name { font-weight: 600; font-size: 0.95rem; }
+      .mobile-shift-meta {
+        display: flex; justify-content: space-between; gap: 12px; width: 100%;
+        font-size: 0.85rem; opacity: 0.9;
+      }
+      :host ::ng-deep .fc .fc-button {
+        min-height: 44px; min-width: 44px;
+      }
+      :host ::ng-deep .fc .fc-toolbar-title { font-size: 1.05rem; }
+      :host ::ng-deep .compact-shift {
+        font-size: 0.85rem; line-height: 1.25; padding: 6px 8px; gap: 8px;
+      }
+      :host ::ng-deep .shift-time { font-size: 0.78rem; }
+      :host ::ng-deep .fc .fc-timegrid-event { min-height: 44px; }
+      :host ::ng-deep .fc .fc-event { min-height: 44px; }
+      :host ::ng-deep .employee-indicator {
+        flex-basis: 28px; width: 28px; height: 28px; font-size: 0.7rem;
+      }
+    }
+
     @media print {
       .sb-page-header, .hours-hint, .view-toggle, .copy-actions { display: none !important; }
+      .mobile-week-nav, .mobile-week-list { display: none !important; }
       .calendar-container, .hours-table-card { border: 1px solid #999; box-shadow: none; break-inside: avoid; }
       :host ::ng-deep .fc .fc-button { display: none !important; }
       :host ::ng-deep .fc .fc-event {
@@ -378,6 +487,10 @@ export class ScheduleComponent implements OnInit {
 
   private cdr = inject(ChangeDetectorRef);
 
+  private breakpoint = inject(BreakpointObserver);
+
+  private destroyRef = inject(DestroyRef);
+
 
 
   locations: Location[] = [];
@@ -391,6 +504,13 @@ export class ScheduleComponent implements OnInit {
   currentScheduleId = '';
 
   currentView = 'timeGridWeek';
+
+  /** True when viewport is at the app's mobile breakpoint (max-width: 768px). */
+  isMobile = false;
+
+  mobileWeekTitle = '';
+
+  mobileWeekDays: { date: string; label: string; shifts: Shift[] }[] = [];
 
   hoursSummary = '';
 
@@ -483,6 +603,36 @@ export class ScheduleComponent implements OnInit {
 
 
   ngOnInit(): void {
+
+    this.isMobile = this.breakpoint.isMatched('(max-width: 768px)');
+    if (this.isMobile) {
+      this.currentView = 'timeGridDay';
+      this.calendarOptions = { ...this.calendarOptions, initialView: 'timeGridDay' };
+    }
+
+    this.breakpoint.observe('(max-width: 768px)')
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((state) => {
+        const nowMobile = state.matches;
+        if (nowMobile === this.isMobile) return;
+        const previousView = this.currentView;
+        this.isMobile = nowMobile;
+        if (nowMobile) {
+          // Entering mobile: never show the squeezed 7-column week grid.
+          if (previousView === 'timeGridWeek') {
+            this.currentView = 'timeGridDay';
+            this.remountCalendarForView('timeGridDay');
+          } else {
+            this.buildMobileWeekDays();
+          }
+        } else if (previousView === 'timeGridWeek') {
+          // Leaving mobile week list → restore desktop 7-column week.
+          this.remountCalendarForView('timeGridWeek');
+        } else {
+          this.remountCalendarForView(previousView);
+        }
+        this.cdr.markForCheck();
+      });
 
     this.auth.organization$.subscribe((org) => {
 
@@ -675,6 +825,7 @@ export class ScheduleComponent implements OnInit {
       setTimeout(() => this.applyLocationHours());
     }
     this.buildEmployeeHours();
+    this.buildMobileWeekDays();
     this.syncCalendarEvents(this.shifts.map((shift) => this.shiftToEvent(shift)));
     this.cdr.markForCheck();
 
@@ -806,7 +957,7 @@ export class ScheduleComponent implements OnInit {
 
 
 
-  private shiftColors(shift: Shift): { background: string; border: string } {
+  shiftColors(shift: Shift): { background: string; border: string } {
 
     if (shift.isOpenShift) return { background: '#fff7e6', border: '#d99a2b' };
     const employeeId = typeof shift.employeeId === 'object'
@@ -887,7 +1038,7 @@ export class ScheduleComponent implements OnInit {
 
 
 
-  private formatShiftHours(shift: Shift): string {
+  formatShiftHours(shift: Shift): string {
 
     const hours = shift.totalHours ?? this.calculateShiftHours(shift);
     return String(Math.round(hours * 100) / 100);
@@ -983,6 +1134,7 @@ export class ScheduleComponent implements OnInit {
       next: () => {
         this.shifts = [];
         this.buildEmployeeHours();
+        this.buildMobileWeekDays();
         this.syncCalendarEvents([]);
         this.updateCurrentWeekCache();
         this.cdr.markForCheck();
@@ -1000,15 +1152,109 @@ export class ScheduleComponent implements OnInit {
 
     this.currentView = view;
 
-    this.calendarComponent?.getApi()?.changeView(view);
+    if (this.isMobile && view === 'timeGridWeek') {
+      this.buildMobileWeekDays();
+      this.cdr.markForCheck();
+      return;
+    }
 
+    if (!this.calendarComponent) {
+      this.remountCalendarForView(view);
+      return;
+    }
+
+    this.calendarComponent.getApi().changeView(view);
+
+  }
+
+
+
+  navigateMobileWeek(dayDelta: number): void {
+    const anchor = this.weekStart
+      ? new Date(`${this.weekStart.split('T')[0]}T12:00:00`)
+      : new Date();
+    anchor.setDate(anchor.getDate() + dayDelta);
+    this.loadSchedule(anchor);
+  }
+
+
+
+  goMobileWeekToday(): void {
+    this.loadSchedule(new Date());
+  }
+
+
+
+  format12HourPublic(time: string): string {
+    return format12Hour(time);
+  }
+
+
+
+  mobileShiftName(shift: Shift): string {
+    if (shift.isOpenShift) return 'Open Shift';
+    const employee = typeof shift.employeeId === 'object' ? shift.employeeId : null;
+    return employeeDisplayName(employee, shift.userId);
+  }
+
+
+
+  private remountCalendarForView(view: string): void {
+    const apiDate = this.calendarComponent?.getApi()?.getDate();
+    const currentDate = apiDate
+      || (this.weekStart ? new Date(`${this.weekStart.split('T')[0]}T12:00:00`) : new Date());
+    this.calendarOptions = {
+      ...this.calendarOptions,
+      initialDate: currentDate,
+      initialView: view,
+      events: this.shifts.map((shift) => this.shiftToEvent(shift)),
+    };
+    this.calendarVisible = false;
+    this.cdr.detectChanges();
+    this.calendarVisible = true;
+    this.cdr.detectChanges();
+    this.applyScheduleStartDay();
+    this.applyLocationHours();
+  }
+
+
+
+  private buildMobileWeekDays(): void {
+    if (!this.weekStart) {
+      this.mobileWeekDays = [];
+      this.mobileWeekTitle = '';
+      return;
+    }
+    const weekStart = new Date(`${this.weekStart.split('T')[0]}T12:00:00`);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    this.mobileWeekTitle = `${weekStart.toLocaleDateString(undefined, {
+      month: 'short', day: 'numeric',
+    })} – ${weekEnd.toLocaleDateString(undefined, {
+      month: 'short', day: 'numeric', year: 'numeric',
+    })}`;
+    this.mobileWeekDays = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(weekStart);
+      date.setDate(weekStart.getDate() + index);
+      const dateKey = formatLocalDate(date);
+      return {
+        date: dateKey,
+        label: date.toLocaleDateString(undefined, {
+          weekday: 'long', month: 'short', day: 'numeric',
+        }),
+        shifts: this.shifts
+          .filter((shift) => shift.date.split('T')[0] === dateKey)
+          .sort((a, b) => a.startTime.localeCompare(b.startTime)),
+      };
+    });
   }
 
 
 
   openAddShift(): void {
 
-    const anchor = this.calendarComponent?.getApi()?.getDate() || new Date();
+    const anchor = this.calendarComponent?.getApi()?.getDate()
+      || (this.weekStart ? new Date(`${this.weekStart.split('T')[0]}T12:00:00`) : new Date());
 
     this.openShiftDialog(formatLocalDate(anchor), '09:00', '17:00', true);
 
@@ -1028,12 +1274,12 @@ export class ScheduleComponent implements OnInit {
 
 
 
-  private openShiftEditor(shift: Shift): void {
+  openShiftEditor(shift: Shift): void {
 
     this.clearExpandedShift();
     this.dialog.open(ShiftDialogComponent, {
 
-      width: '420px',
+      width: '440px',
 
       data: {
 
@@ -1050,6 +1296,8 @@ export class ScheduleComponent implements OnInit {
         operatingHours: this.selectedLocation?.operatingHours,
 
         existingShifts: this.shifts,
+
+        weekDays: this.getShiftDialogWeekDays(),
 
       },
 
@@ -1105,7 +1353,7 @@ export class ScheduleComponent implements OnInit {
 
     this.dialog.open(ShiftDialogComponent, {
 
-      width: '420px',
+      width: '440px',
 
       data: {
         locationId: this.selectedLocationId,
@@ -1115,10 +1363,22 @@ export class ScheduleComponent implements OnInit {
         operatingHours: this.selectedLocation?.operatingHours,
         existingShifts: this.shifts,
         useNextAvailable,
+        weekDays: this.getShiftDialogWeekDays(),
       },
 
     }).afterClosed().subscribe((result?: ShiftDialogResult) => this.applyShiftDialogResult(result));
 
+  }
+
+
+
+  private getShiftDialogWeekDays(): { date: string; label: string }[] {
+    if (!this.weekStart) return [];
+    const weekStart = new Date(`${this.weekStart.split('T')[0]}T12:00:00`);
+    return this.buildCopyDayOptions(weekStart, this.shifts).map((day) => ({
+      date: day.date,
+      label: day.label,
+    }));
   }
 
 
@@ -1128,15 +1388,33 @@ export class ScheduleComponent implements OnInit {
     if (!result) return;
     let calendarShift: Shift | undefined;
     let removedShiftId: string | undefined;
+    const weekStartKey = this.weekStart.split('T')[0];
+    const weekEndKey = this.weekEnd.split('T')[0];
+    const isInDisplayedWeek = (shift: Shift) => {
+      const shiftDate = shift.date.split('T')[0];
+      return shiftDate >= weekStartKey && shiftDate <= weekEndKey;
+    };
+
     if (result.action === 'deleted') {
       this.shifts = this.shifts.filter((shift) => shift._id !== result.shiftId);
       removedShiftId = result.shiftId;
+    } else if (result.action === 'copied') {
+      const newShifts = result.shifts.filter(isInDisplayedWeek);
+      if (newShifts.length) {
+        this.shifts = [...this.shifts, ...newShifts]
+          .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+        this.buildEmployeeHours();
+        this.buildMobileWeekDays();
+        this.syncCalendarEvents(this.shifts.map((shift) => this.shiftToEvent(shift)));
+        this.updateCurrentWeekCache();
+        this.cdr.markForCheck();
+      }
+      return;
     } else {
       const shiftDate = result.shift.date.split('T')[0];
-      const isInDisplayedWeek = shiftDate >= this.weekStart.split('T')[0]
-        && shiftDate <= this.weekEnd.split('T')[0];
+      const inWeek = shiftDate >= weekStartKey && shiftDate <= weekEndKey;
       const existingIndex = this.shifts.findIndex((shift) => shift._id === result.shift._id);
-      if (!isInDisplayedWeek) {
+      if (!inWeek) {
         if (existingIndex >= 0) this.shifts = this.shifts.filter((shift) => shift._id !== result.shift._id);
         removedShiftId = result.shift._id;
       } else if (existingIndex >= 0) {
@@ -1147,9 +1425,22 @@ export class ScheduleComponent implements OnInit {
           .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
         calendarShift = result.shift;
       }
+
+      const copied = (result.copiedShifts || []).filter(isInDisplayedWeek);
+      if (copied.length) {
+        this.shifts = [...this.shifts, ...copied]
+          .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+        this.buildEmployeeHours();
+        this.buildMobileWeekDays();
+        this.syncCalendarEvents(this.shifts.map((shift) => this.shiftToEvent(shift)));
+        this.updateCurrentWeekCache();
+        this.cdr.markForCheck();
+        return;
+      }
     }
 
     this.buildEmployeeHours();
+    this.buildMobileWeekDays();
     this.updateCalendarShift(calendarShift, removedShiftId);
     this.updateCurrentWeekCache();
     this.cdr.markForCheck();
@@ -1249,6 +1540,7 @@ export class ScheduleComponent implements OnInit {
           this.shifts = res.data.shifts;
           this.currentScheduleId = res.data.schedule._id;
           this.buildEmployeeHours();
+          this.buildMobileWeekDays();
           this.syncCalendarEvents(this.shifts.map((shift) => this.shiftToEvent(shift)));
           this.updateCurrentWeekCache();
           this.copyingPreviousWeek = false;
@@ -1297,8 +1589,13 @@ export class ScheduleComponent implements OnInit {
             ].sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
             this.currentScheduleId = res.data.schedule._id;
             this.buildEmployeeHours();
+            this.buildMobileWeekDays();
             this.updateCurrentWeekCache();
-            this.rebuildCalendar();
+            if (this.isMobile && this.currentView === 'timeGridWeek') {
+              this.cdr.markForCheck();
+            } else {
+              this.rebuildCalendar();
+            }
             this.copyingDay = false;
             this.cdr.markForCheck();
           },

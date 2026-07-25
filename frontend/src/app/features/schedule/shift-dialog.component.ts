@@ -6,6 +6,7 @@ import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatSelectModule } from '@angular/material/select';
 import { MatCheckboxModule } from '@angular/material/checkbox';
+import { forkJoin } from 'rxjs';
 import { EmployeeService, ScheduleService } from '../../core/services';
 import { EmployeeProfile, Shift, employeeDisplayName } from '../../core/models';
 import { employeeColor } from '../../core/utils/employee-colors';
@@ -13,6 +14,11 @@ import {
   DEFAULT_OPERATING_HOURS,
   OperatingHours,
 } from '../../core/utils/operating-hours';
+
+export interface ShiftDialogWeekDay {
+  date: string;
+  label: string;
+}
 
 export interface ShiftDialogData {
   locationId: string;
@@ -23,10 +29,13 @@ export interface ShiftDialogData {
   operatingHours?: OperatingHours;
   existingShifts?: Shift[];
   useNextAvailable?: boolean;
+  /** Days in the displayed week — used for copy-to-days. */
+  weekDays?: ShiftDialogWeekDay[];
 }
 
 export type ShiftDialogResult =
-  | { action: 'saved'; shift: Shift }
+  | { action: 'saved'; shift: Shift; copiedShifts?: Shift[] }
+  | { action: 'copied'; shifts: Shift[] }
   | { action: 'deleted'; shiftId: string };
 
 @Component({
@@ -85,6 +94,22 @@ export type ShiftDialogResult =
           <mat-label>Notes</mat-label>
           <input matInput formControlName="notes">
         </mat-form-field>
+
+        @if (copyTargets.length) {
+          <div class="copy-section">
+            <span class="copy-label">Copy this shift to</span>
+            <p class="copy-hint">Same employee, times, and notes on the days you select.</p>
+            <div class="copy-days">
+              @for (day of copyTargets; track day.date) {
+                <mat-checkbox
+                  [checked]="copyDates.has(day.date)"
+                  (change)="toggleCopyDate(day.date, $event.checked)">
+                  {{ day.label }}
+                </mat-checkbox>
+              }
+            </div>
+          </div>
+        }
       </form>
       @if (error) {
         <p class="error">{{ error }}</p>
@@ -95,8 +120,15 @@ export type ShiftDialogResult =
         <button mat-button color="warn" (click)="deleteShift()" [disabled]="saving">Delete</button>
       }
       <button mat-button mat-dialog-close [disabled]="saving">Cancel</button>
+      @if (copyTargets.length) {
+        <button mat-stroked-button color="primary"
+                [disabled]="form.invalid || saving || copyDates.size === 0"
+                (click)="copyToSelectedDays()">
+          @if (saving && copying) { Copying… } @else { Copy to selected days }
+        </button>
+      }
       <button mat-flat-button color="primary" [disabled]="form.invalid || saving" (click)="save()">
-        @if (saving) { Saving… } @else { Save Shift }
+        @if (saving && !copying) { Saving… } @else { Save Shift }
       </button>
     </mat-dialog-actions>
   `,
@@ -108,6 +140,14 @@ export type ShiftDialogResult =
     .hours-note { margin: -8px 0 8px; color: var(--sb-text-secondary); font-size: 0.8rem; }
     .emp-option { display: inline-flex; align-items: center; gap: 8px; }
     .color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .copy-section {
+      margin-top: 8px; padding: 12px; border: 1px solid #d8e3ef; border-radius: 8px;
+      background: #f8fbfe;
+    }
+    .copy-label { display: block; font-weight: 600; color: #24496d; font-size: 0.875rem; }
+    .copy-hint { margin: 4px 0 10px; color: var(--sb-text-secondary); font-size: 0.78rem; line-height: 1.4; }
+    .copy-days { display: grid; gap: 2px; }
+    mat-dialog-actions { flex-wrap: wrap; gap: 4px; }
   `],
 })
 export class ShiftDialogComponent implements OnInit {
@@ -122,7 +162,10 @@ export class ShiftDialogComponent implements OnInit {
   endOptions: { value: string; label: string }[] = [];
   dayHoursLabel = '';
   saving = false;
+  copying = false;
   error = '';
+  copyDates = new Set<string>();
+  copyTargets: ShiftDialogWeekDay[] = [];
 
   form = this.fb.group({
     date: ['', Validators.required],
@@ -144,6 +187,7 @@ export class ShiftDialogComponent implements OnInit {
       notes: shift?.notes || '',
     });
     this.refreshTimeOptions(!shift && !!this.data.useNextAvailable);
+    this.refreshCopyTargets();
 
     this.employeeService.getAll().subscribe((res) => {
       this.employees = res.data.filter((e) => this.isSchedulableAtLocation(e));
@@ -166,12 +210,44 @@ export class ShiftDialogComponent implements OnInit {
 
     this.form.get('date')?.valueChanges.subscribe(() => {
       this.refreshTimeOptions(!this.data.shift);
+      this.refreshCopyTargets();
     });
     this.form.get('startTime')?.valueChanges.subscribe(() => {
       this.refreshEndOptions();
       this.validateTimeRange();
     });
     this.form.get('endTime')?.valueChanges.subscribe(() => this.validateTimeRange());
+  }
+
+  toggleCopyDate(date: string, checked: boolean): void {
+    if (checked) this.copyDates.add(date);
+    else this.copyDates.delete(date);
+  }
+
+  private refreshCopyTargets(): void {
+    const sourceDate = this.form.get('date')?.value || this.data.date;
+    this.copyTargets = (this.data.weekDays || []).filter((day) => day.date !== sourceDate);
+    this.copyDates.delete(sourceDate);
+    for (const date of [...this.copyDates]) {
+      if (!this.copyTargets.some((day) => day.date === date)) this.copyDates.delete(date);
+    }
+  }
+
+  private buildShiftPayload(date: string) {
+    const v = this.form.getRawValue();
+    return {
+      locationId: this.data.locationId,
+      date,
+      startTime: v.startTime!,
+      endTime: v.endTime!,
+      employeeId: v.isOpenShift ? undefined : v.employeeId || undefined,
+      isOpenShift: !!v.isOpenShift,
+      notes: v.notes || undefined,
+    };
+  }
+
+  private createShiftsOnDates(dates: string[]) {
+    return forkJoin(dates.map((date) => this.scheduleService.createShift(this.buildShiftPayload(date))));
   }
 
   private refreshTimeOptions(useNextAvailable: boolean): void {
@@ -317,28 +393,60 @@ export class ShiftDialogComponent implements OnInit {
   save(): void {
     if (this.form.invalid) return;
     this.saving = true;
+    this.copying = false;
     this.error = '';
 
-    const v = this.form.getRawValue();
-    const payload = {
-      locationId: this.data.locationId,
-      date: v.date,
-      startTime: v.startTime,
-      endTime: v.endTime,
-      employeeId: v.isOpenShift ? undefined : v.employeeId,
-      isOpenShift: v.isOpenShift,
-      notes: v.notes || undefined,
-    };
+    const sourceDate = this.form.get('date')?.value!;
+    const payload = this.buildShiftPayload(sourceDate);
+    const copyDates = [...this.copyDates];
 
     const req = this.data.shift
       ? this.scheduleService.updateShift(this.data.shift._id, payload)
       : this.scheduleService.createShift(payload);
 
     req.subscribe({
-      next: (res) => this.dialogRef.close({ action: 'saved', shift: res.data } satisfies ShiftDialogResult),
+      next: (res) => {
+        if (!copyDates.length) {
+          this.dialogRef.close({ action: 'saved', shift: res.data } satisfies ShiftDialogResult);
+          return;
+        }
+        this.copying = true;
+        this.createShiftsOnDates(copyDates).subscribe({
+          next: (responses) => this.dialogRef.close({
+            action: 'saved',
+            shift: res.data,
+            copiedShifts: responses.map((response) => response.data),
+          } satisfies ShiftDialogResult),
+          error: (err) => {
+            this.saving = false;
+            this.copying = false;
+            this.error = err.error?.message
+              || 'Shift saved, but copying to other days failed';
+          },
+        });
+      },
       error: (err) => {
         this.saving = false;
         this.error = err.error?.message || 'Failed to save shift';
+      },
+    });
+  }
+
+  copyToSelectedDays(): void {
+    if (this.form.invalid || this.copyDates.size === 0) return;
+    this.saving = true;
+    this.copying = true;
+    this.error = '';
+
+    this.createShiftsOnDates([...this.copyDates]).subscribe({
+      next: (responses) => this.dialogRef.close({
+        action: 'copied',
+        shifts: responses.map((response) => response.data),
+      } satisfies ShiftDialogResult),
+      error: (err) => {
+        this.saving = false;
+        this.copying = false;
+        this.error = err.error?.message || 'Failed to copy shift';
       },
     });
   }
