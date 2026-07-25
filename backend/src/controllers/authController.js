@@ -117,10 +117,14 @@ export const login = async (req, res, next) => {
       throw new AppError('Insufficient permissions', 403);
     }
 
+    // Legacy accounts may lack required name fields; repair before saving login metadata.
+    if (!user.firstName?.trim()) user.firstName = 'User';
+    if (!user.lastName?.trim()) user.lastName = 'Account';
+
     user.lastLogin = new Date();
     const tokens = generateTokens(user._id);
     user.refreshToken = tokens.refreshToken;
-    await user.save();
+    await user.save({ validateModifiedOnly: true });
 
     const organization = user.organizationId
       ? await Organization.findById(user.organizationId)
@@ -150,7 +154,7 @@ export const refreshToken = async (req, res, next) => {
 
     const tokens = generateTokens(user._id);
     user.refreshToken = tokens.refreshToken;
-    await user.save();
+    await user.save({ validateModifiedOnly: true });
 
     res.json({ success: true, data: tokens });
   } catch (error) {
@@ -167,7 +171,7 @@ export const forgotPassword = async (req, res, next) => {
       const resetToken = generateToken();
       user.passwordResetToken = resetToken;
       user.passwordResetExpires = new Date(Date.now() + 60 * 60 * 1000);
-      await user.save();
+      await user.save({ validateModifiedOnly: true });
       await sendPasswordResetEmail(user, resetToken).catch(() => {});
     }
 
@@ -193,7 +197,7 @@ export const resetPassword = async (req, res, next) => {
     user.password = password;
     user.passwordResetToken = undefined;
     user.passwordResetExpires = undefined;
-    await user.save();
+    await user.save({ validateModifiedOnly: true });
 
     res.json({ success: true, message: 'Password reset successful' });
   } catch (error) {
@@ -214,7 +218,7 @@ export const verifyEmail = async (req, res, next) => {
     user.isEmailVerified = true;
     user.emailVerificationToken = undefined;
     user.emailVerificationExpires = undefined;
-    await user.save();
+    await user.save({ validateModifiedOnly: true });
 
     res.json({ success: true, message: 'Email verified successfully' });
   } catch (error) {
